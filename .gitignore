@@ -1,0 +1,31 @@
+# Compiled binaries
+powerhive
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and coverage
+*.test
+*.out
+coverage.html
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -56,13 +56,19 @@ func (p *Prober) Probe(ctx context.Context, host string) (*miner.Info, error) {
 		return nil, ErrNotStockFirmware
 	}
 
+	// Use algorithm from API if available, fallback to sha256d for older models
+	algorithm := sysInfo.Algorithm
+	if algorithm == "" {
+		algorithm = "sha256d"
+	}
+
 	return &miner.Info{
 		Miner:           sysInfo.MinerType,
 		Model:           sysInfo.MinerType,
 		Series:          extractSeries(sysInfo.MinerType),
 		Firmware:        "Stock",
 		FirmwareVersion: sysInfo.SystemFilesystemVersion,
-		Algorithm:       "sha256d",
+		Algorithm:       algorithm,
 		IP:              sysInfo.IPAddress,
 		MAC:             sysInfo.MACAddr,
 		Hostname:        sysInfo.Hostname,

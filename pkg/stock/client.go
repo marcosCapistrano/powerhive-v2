@@ -1,11 +1,14 @@
 package stock
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/powerhive/powerhive-v2/pkg/miner"
@@ -30,6 +33,33 @@ type Client interface {
 
 	// GetSummary returns summary mining data from summary.cgi (KS5, newer models).
 	GetSummary(ctx context.Context) (*SummaryResponse, error)
+
+	// GetPools returns pool status from pools.cgi (KS5, newer models).
+	GetPools(ctx context.Context) (*PoolsResponse, error)
+
+	// GetNetworkInfo returns network configuration.
+	GetNetworkInfo(ctx context.Context) (*NetworkInfo, error)
+
+	// GetBlinkStatus returns LED blink status.
+	GetBlinkStatus(ctx context.Context) (*BlinkStatus, error)
+
+	// GetLogs returns system logs as plain text.
+	GetLogs(ctx context.Context) (string, error)
+
+	// SetMinerConfig updates miner configuration.
+	SetMinerConfig(ctx context.Context, config *MinerConfig) (*ConfigResponse, error)
+
+	// SetNetworkConfig updates network configuration.
+	SetNetworkConfig(ctx context.Context, config *NetworkInfo) (*ConfigResponse, error)
+
+	// SetBlink toggles LED blink for miner identification.
+	SetBlink(ctx context.Context, blink bool) (*ConfigResponse, error)
+
+	// Reboot reboots the miner.
+	Reboot(ctx context.Context) error
+
+	// ResetConfig resets miner configuration to factory defaults.
+	ResetConfig(ctx context.Context) error
 }
 
 // HTTPClient is the HTTP implementation of the stock firmware Client.
@@ -160,6 +190,120 @@ func (c *HTTPClient) tryRequest(ctx context.Context, endpoint string, result int
 	return true, nil
 }
 
+// postRequest performs an HTTP POST request with JSON body.
+func (c *HTTPClient) postRequest(ctx context.Context, endpoint string, body interface{}, result interface{}) error {
+	fullURL := c.baseURL + endpoint
+
+	var reqBody io.Reader
+	if body != nil {
+		jsonData, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		reqBody = bytes.NewReader(jsonData)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if result != nil && len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// postFormRequest performs an HTTP POST request with form-encoded body.
+func (c *HTTPClient) postFormRequest(ctx context.Context, endpoint string, data url.Values, result interface{}) error {
+	fullURL := c.baseURL + endpoint
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if result != nil && len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// requestText performs an HTTP GET request and returns the response as plain text.
+func (c *HTTPClient) requestText(ctx context.Context, endpoint string) (string, error) {
+	fullURL := c.baseURL + endpoint
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return string(body), nil
+}
+
 // GetSystemInfo returns system information.
 func (c *HTTPClient) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 	var result SystemInfo
@@ -195,6 +339,76 @@ func (c *HTTPClient) GetSummary(ctx context.Context) (*SummaryResponse, error) {
 	return &result, err
 }
 
+// GetPools returns pool status from pools.cgi (KS5, newer models).
+func (c *HTTPClient) GetPools(ctx context.Context) (*PoolsResponse, error) {
+	var result PoolsResponse
+	err := c.request(ctx, "/pools.cgi", &result)
+	return &result, err
+}
+
+// GetNetworkInfo returns network configuration.
+func (c *HTTPClient) GetNetworkInfo(ctx context.Context) (*NetworkInfo, error) {
+	var result NetworkInfo
+	err := c.request(ctx, "/get_network_info.cgi", &result)
+	return &result, err
+}
+
+// GetBlinkStatus returns LED blink status.
+func (c *HTTPClient) GetBlinkStatus(ctx context.Context) (*BlinkStatus, error) {
+	var result BlinkStatus
+	err := c.request(ctx, "/get_blink_status.cgi", &result)
+	return &result, err
+}
+
+// GetLogs returns system logs as plain text.
+func (c *HTTPClient) GetLogs(ctx context.Context) (string, error) {
+	return c.requestText(ctx, "/log.cgi")
+}
+
+// SetMinerConfig updates miner configuration.
+func (c *HTTPClient) SetMinerConfig(ctx context.Context, config *MinerConfig) (*ConfigResponse, error) {
+	var result ConfigResponse
+	err := c.postRequest(ctx, "/set_miner_conf.cgi", config, &result)
+	return &result, err
+}
+
+// SetNetworkConfig updates network configuration.
+func (c *HTTPClient) SetNetworkConfig(ctx context.Context, config *NetworkInfo) (*ConfigResponse, error) {
+	data := url.Values{}
+	data.Set("conf_nettype", config.ConfNetType)
+	data.Set("conf_hostname", config.ConfHostname)
+	data.Set("conf_ipaddress", config.ConfIPAddress)
+	data.Set("conf_netmask", config.ConfNetmask)
+	data.Set("conf_gateway", config.ConfGateway)
+	data.Set("conf_dnsservers", config.ConfDNSServers)
+
+	var result ConfigResponse
+	err := c.postFormRequest(ctx, "/set_network_conf.cgi", data, &result)
+	return &result, err
+}
+
+// SetBlink toggles LED blink for miner identification.
+func (c *HTTPClient) SetBlink(ctx context.Context, blink bool) (*ConfigResponse, error) {
+	data := url.Values{}
+	data.Set("blink", fmt.Sprintf("%t", blink))
+
+	var result ConfigResponse
+	err := c.postFormRequest(ctx, "/blink.cgi", data, &result)
+	return &result, err
+}
+
+// Reboot reboots the miner.
+func (c *HTTPClient) Reboot(ctx context.Context) error {
+	_, err := c.requestText(ctx, "/reboot.cgi")
+	return err
+}
+
+// ResetConfig resets miner configuration to factory defaults.
+func (c *HTTPClient) ResetConfig(ctx context.Context) error {
+	_, err := c.requestText(ctx, "/reset_conf.cgi")
+	return err
+}
+
 // =============================================================================
 // miner.Client interface implementation
 // =============================================================================
@@ -206,13 +420,19 @@ func (c *HTTPClient) GetMinerInfo(ctx context.Context) (*miner.Info, error) {
 		return nil, err
 	}
 
+	// Use algorithm from API if available, fallback to sha256d for older models
+	algorithm := sysInfo.Algorithm
+	if algorithm == "" {
+		algorithm = "sha256d"
+	}
+
 	return &miner.Info{
 		Miner:           sysInfo.MinerType,
 		Model:           sysInfo.MinerType,
 		Series:          extractSeries(sysInfo.MinerType),
 		Firmware:        "Stock",
 		FirmwareVersion: sysInfo.SystemFilesystemVersion,
-		Algorithm:       "sha256d",
+		Algorithm:       algorithm,
 		IP:              sysInfo.IPAddress,
 		MAC:             sysInfo.MACAddr,
 		Hostname:        sysInfo.Hostname,
