@@ -785,5 +785,180 @@ func (r *SQLiteRepository) DeleteMinerNote(ctx context.Context, minerID int64, k
 	return err
 }
 
+// =============================================================================
+// Log Sessions
+// =============================================================================
+
+func (r *SQLiteRepository) GetCurrentLogSession(ctx context.Context, minerID int64) (*MinerLogSession, error) {
+	s := &MinerLogSession{}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, miner_id, boot_time, started_at, ended_at, end_reason
+		FROM miner_log_sessions WHERE miner_id = ? AND ended_at IS NULL
+		ORDER BY started_at DESC LIMIT 1`, minerID).Scan(
+		&s.ID, &s.MinerID, &s.BootTime, &s.StartedAt, &s.EndedAt, &s.EndReason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return s, err
+}
+
+func (r *SQLiteRepository) GetLogSessionByBootTime(ctx context.Context, minerID int64, bootTime time.Time) (*MinerLogSession, error) {
+	// Allow 2-minute tolerance for boot time matching
+	minTime := bootTime.Add(-2 * time.Minute)
+	maxTime := bootTime.Add(2 * time.Minute)
+
+	s := &MinerLogSession{}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, miner_id, boot_time, started_at, ended_at, end_reason
+		FROM miner_log_sessions
+		WHERE miner_id = ? AND boot_time >= ? AND boot_time <= ?
+		ORDER BY started_at DESC LIMIT 1`, minerID, minTime, maxTime).Scan(
+		&s.ID, &s.MinerID, &s.BootTime, &s.StartedAt, &s.EndedAt, &s.EndReason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return s, err
+}
+
+func (r *SQLiteRepository) GetLogSessions(ctx context.Context, minerID int64) ([]*MinerLogSession, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, miner_id, boot_time, started_at, ended_at, end_reason
+		FROM miner_log_sessions WHERE miner_id = ?
+		ORDER BY started_at DESC`, minerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*MinerLogSession
+	for rows.Next() {
+		s := &MinerLogSession{}
+		if err := rows.Scan(&s.ID, &s.MinerID, &s.BootTime, &s.StartedAt, &s.EndedAt, &s.EndReason); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, rows.Err()
+}
+
+func (r *SQLiteRepository) CreateLogSession(ctx context.Context, session *MinerLogSession) error {
+	session.StartedAt = time.Now()
+	result, err := r.db.ExecContext(ctx, `
+		INSERT INTO miner_log_sessions (miner_id, boot_time, started_at, ended_at, end_reason)
+		VALUES (?, ?, ?, ?, ?)`,
+		session.MinerID, session.BootTime, session.StartedAt, session.EndedAt, session.EndReason)
+	if err != nil {
+		return err
+	}
+	session.ID, _ = result.LastInsertId()
+	return nil
+}
+
+func (r *SQLiteRepository) EndLogSession(ctx context.Context, sessionID int64, endTime time.Time, reason string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE miner_log_sessions SET ended_at = ?, end_reason = ? WHERE id = ?`,
+		endTime, reason, sessionID)
+	return err
+}
+
+// =============================================================================
+// Logs
+// =============================================================================
+
+func (r *SQLiteRepository) InsertLogs(ctx context.Context, logs []*MinerLog) error {
+	if len(logs) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO miner_logs (miner_id, session_id, log_type, log_time, message, fetched_at)
+		VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now()
+	for _, log := range logs {
+		log.FetchedAt = now
+		_, err := stmt.ExecContext(ctx, log.MinerID, log.SessionID, log.LogType, log.LogTime, log.Message, log.FetchedAt)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *SQLiteRepository) GetSessionLogs(ctx context.Context, sessionID int64, logType string, limit, offset int) ([]*MinerLog, error) {
+	query := `
+		SELECT id, miner_id, session_id, log_type, log_time, message, fetched_at
+		FROM miner_logs WHERE session_id = ?`
+	args := []interface{}{sessionID}
+
+	if logType != "" {
+		query += " AND log_type = ?"
+		args = append(args, logType)
+	}
+
+	query += " ORDER BY COALESCE(log_time, fetched_at) ASC"
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	if offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, offset)
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*MinerLog
+	for rows.Next() {
+		l := &MinerLog{}
+		if err := rows.Scan(&l.ID, &l.MinerID, &l.SessionID, &l.LogType, &l.LogTime, &l.Message, &l.FetchedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, rows.Err()
+}
+
+func (r *SQLiteRepository) GetLastLogTime(ctx context.Context, sessionID int64, logType string) (*time.Time, error) {
+	var logTime *time.Time
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MAX(log_time) FROM miner_logs WHERE session_id = ? AND log_type = ?`,
+		sessionID, logType).Scan(&logTime)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return logTime, err
+}
+
+func (r *SQLiteRepository) GetLogCount(ctx context.Context, sessionID int64, logType string) (int, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM miner_logs WHERE session_id = ?"
+	args := []interface{}{sessionID}
+
+	if logType != "" {
+		query += " AND log_type = ?"
+		args = append(args, logType)
+	}
+
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
 // Ensure SQLiteRepository implements Repository
 var _ Repository = (*SQLiteRepository)(nil)

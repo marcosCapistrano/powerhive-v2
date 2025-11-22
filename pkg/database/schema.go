@@ -235,6 +235,38 @@ CREATE TABLE IF NOT EXISTS miner_notes (
 
 CREATE INDEX IF NOT EXISTS idx_miner_notes_miner ON miner_notes(miner_id);
 
+-- Log sessions (one per boot cycle)
+-- Each time a miner reboots, a new session is created
+CREATE TABLE IF NOT EXISTS miner_log_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    miner_id INTEGER NOT NULL,
+    boot_time DATETIME NOT NULL,      -- Calculated: now - uptime
+    started_at DATETIME NOT NULL,     -- When we first detected this session
+    ended_at DATETIME,                -- When reboot detected (null = current session)
+    end_reason TEXT,                  -- 'reboot', 'offline', null
+    FOREIGN KEY (miner_id) REFERENCES miners(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_log_sessions_miner ON miner_log_sessions(miner_id);
+CREATE INDEX IF NOT EXISTS idx_log_sessions_boot ON miner_log_sessions(miner_id, boot_time);
+
+-- Log entries
+CREATE TABLE IF NOT EXISTS miner_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    miner_id INTEGER NOT NULL,
+    session_id INTEGER NOT NULL,
+    log_type TEXT NOT NULL,           -- 'status', 'miner', 'system', 'autotune', 'messages', 'api', 'kernel'
+    log_time DATETIME,                -- Parsed from log line (if available)
+    message TEXT NOT NULL,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (miner_id) REFERENCES miners(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id) REFERENCES miner_log_sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_miner_logs_session ON miner_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_miner_logs_type ON miner_logs(miner_id, log_type);
+CREATE INDEX IF NOT EXISTS idx_miner_logs_time ON miner_logs(session_id, log_type, log_time);
+
 -- Schema version for migrations
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,

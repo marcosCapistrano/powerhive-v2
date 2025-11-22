@@ -131,6 +131,7 @@
     <button class="tab" onclick="showTab('pools')">Pools</button>
     <button class="tab" onclick="showTab('hardware')">Hardware</button>
     <button class="tab" onclick="showTab('network')">Network</button>
+    <button class="tab" onclick="showTab('logs')">Logs</button>
 </div>
 
 <!-- Chains Tab -->
@@ -318,6 +319,40 @@
     {{end}}
 </div>
 
+<!-- Logs Tab -->
+<div id="logs" class="tab-content">
+    {{if .LogSessions}}
+    <div class="log-controls" style="margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center;">
+        <label>Session:
+            <select id="logSessionSelect" onchange="loadLogs()" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px;">
+                {{range .LogSessions}}
+                <option value="{{.ID}}" {{if eq .ID $.CurrentSession.ID}}selected{{end}}>
+                    {{formatTime .BootTime}} {{if .EndedAt}}(ended){{else}}(current){{end}}
+                </option>
+                {{end}}
+            </select>
+        </label>
+        <label>Type:
+            <select id="logTypeSelect" onchange="loadLogs()" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px;">
+                <option value="status">Status</option>
+                <option value="miner">Miner</option>
+                <option value="system">System</option>
+                <option value="autotune">Autotune</option>
+                <option value="messages">Messages</option>
+                <option value="api">API</option>
+                <option value="kernel">Kernel</option>
+            </select>
+        </label>
+        <button onclick="loadLogs()" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">Refresh</button>
+    </div>
+    <div id="logContainer" class="log-container" style="background: #0d1117; border-radius: 8px; padding: 1rem; max-height: 500px; overflow-y: auto; font-family: 'Monaco', 'Menlo', monospace; font-size: 0.85rem;">
+        <pre id="logContent" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #c9d1d9;">Loading logs...</pre>
+    </div>
+    {{else}}
+    <p class="text-muted">No log sessions available. Logs are collected when the harvester runs.</p>
+    {{end}}
+</div>
+
 <script>
 // Tab switching
 function showTab(tabId) {
@@ -448,6 +483,54 @@ new Chart(document.getElementById('fanChart'), {
         }
     }
 });
+
+// Log loading
+const minerID = {{.Miner.ID}};
+let logsLoaded = false;
+
+function loadLogs() {
+    const sessionSelect = document.getElementById('logSessionSelect');
+    const typeSelect = document.getElementById('logTypeSelect');
+    const logContent = document.getElementById('logContent');
+
+    if (!sessionSelect || !typeSelect) return;
+
+    const sessionID = sessionSelect.value;
+    const logType = typeSelect.value;
+
+    logContent.textContent = 'Loading logs...';
+
+    fetch(`/api/miner/${minerID}/logs?session=${sessionID}&type=${logType}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                logContent.textContent = 'Error: ' + data.error;
+                return;
+            }
+            if (!data.logs || data.logs.length === 0) {
+                logContent.textContent = 'No logs found for this session and type.';
+                return;
+            }
+            // Format logs
+            const formatted = data.logs.map(log => log.message).join('\n');
+            logContent.textContent = formatted;
+            // Scroll to bottom
+            document.getElementById('logContainer').scrollTop = document.getElementById('logContainer').scrollHeight;
+        })
+        .catch(err => {
+            logContent.textContent = 'Failed to load logs: ' + err.message;
+        });
+}
+
+// Load logs when switching to logs tab
+const originalShowTab = showTab;
+showTab = function(tabId) {
+    originalShowTab(tabId);
+    if (tabId === 'logs' && !logsLoaded) {
+        loadLogs();
+        logsLoaded = true;
+    }
+};
 </script>
     </main>
 </body>

@@ -300,20 +300,30 @@ func (s *Server) handleMinerDetail(w http.ResponseWriter, r *http.Request) {
 	// Get autotune presets (VNish)
 	presets, _ := s.repo.GetAutotunePresets(ctx, miner.ID)
 
+	// Get log sessions
+	logSessions, _ := s.repo.GetLogSessions(ctx, miner.ID)
+	var currentSession *database.MinerLogSession
+	if len(logSessions) > 0 {
+		// The current session is the most recent one (first in list, sorted by boot_time desc)
+		currentSession = logSessions[0]
+	}
+
 	data := map[string]interface{}{
-		"Title":       fmt.Sprintf("%s - PowerHive", miner.IPAddress),
-		"Miner":       details.Miner,
-		"Network":     details.Network,
-		"Hardware":    details.Hardware,
-		"Status":      details.Status,
-		"Summary":     details.Summary,
-		"Chains":      details.Chains,
-		"Pools":       details.Pools,
-		"Fans":        details.Fans,
-		"Metrics":     metrics,
-		"Presets":     presets,
-		"TimeRange":   rangeParam,
-		"TimeRanges":  []string{"1h", "24h", "7d", "30d"},
+		"Title":          fmt.Sprintf("%s - PowerHive", miner.IPAddress),
+		"Miner":          details.Miner,
+		"Network":        details.Network,
+		"Hardware":       details.Hardware,
+		"Status":         details.Status,
+		"Summary":        details.Summary,
+		"Chains":         details.Chains,
+		"Pools":          details.Pools,
+		"Fans":           details.Fans,
+		"Metrics":        metrics,
+		"Presets":        presets,
+		"TimeRange":      rangeParam,
+		"TimeRanges":     []string{"1h", "24h", "7d", "30d"},
+		"LogSessions":    logSessions,
+		"CurrentSession": currentSession,
 	}
 
 	s.render(w, "miner.html", data)
@@ -359,6 +369,9 @@ func (s *Server) handleAPIMiner(w http.ResponseWriter, r *http.Request) {
 			return
 		case "status":
 			s.handleAPIMinerStatus(w, r, ctx, id)
+			return
+		case "logs":
+			s.handleAPIMinerLogs(w, r, ctx, id)
 			return
 		}
 	}
@@ -411,6 +424,33 @@ func (s *Server) handleAPIMinerStatus(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	s.jsonResponse(w, status)
+}
+
+func (s *Server) handleAPIMinerLogs(w http.ResponseWriter, r *http.Request, ctx context.Context, minerID int64) {
+	sessionIDStr := r.URL.Query().Get("session")
+	logType := r.URL.Query().Get("type")
+
+	if sessionIDStr == "" || logType == "" {
+		s.jsonError(w, "session and type parameters are required", http.StatusBadRequest)
+		return
+	}
+
+	sessionID, err := strconv.ParseInt(sessionIDStr, 10, 64)
+	if err != nil {
+		s.jsonError(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch logs (limit to 1000 entries)
+	logs, err := s.repo.GetSessionLogs(ctx, sessionID, logType, 1000, 0)
+	if err != nil {
+		s.jsonError(w, "Failed to load logs", http.StatusInternalServerError)
+		return
+	}
+
+	s.jsonResponse(w, map[string]interface{}{
+		"logs": logs,
+	})
 }
 
 // Helper methods

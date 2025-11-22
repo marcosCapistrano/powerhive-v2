@@ -222,3 +222,41 @@ type MinerNote struct {
 	Value     string    `json:"value"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// MinerLogSession represents a boot cycle for a miner.
+// Each time a miner reboots, a new session is created.
+type MinerLogSession struct {
+	ID        int64      `json:"id"`
+	MinerID   int64      `json:"miner_id"`
+	BootTime  time.Time  `json:"boot_time"`  // Calculated: now - uptime
+	StartedAt time.Time  `json:"started_at"` // When we first detected this session
+	EndedAt   *time.Time `json:"ended_at"`   // When reboot detected (null = current)
+	EndReason string     `json:"end_reason"` // "reboot", "offline", ""
+}
+
+// IsActive returns true if this is the current active session.
+func (s *MinerLogSession) IsActive() bool {
+	return s.EndedAt == nil
+}
+
+// MinerLog represents a single log entry from a miner.
+type MinerLog struct {
+	ID        int64      `json:"id"`
+	MinerID   int64      `json:"miner_id"`
+	SessionID int64      `json:"session_id"`
+	LogType   string     `json:"log_type"`  // "status", "miner", "system", etc.
+	LogTime   *time.Time `json:"log_time"`  // Parsed from log line (if available)
+	Message   string     `json:"message"`
+	FetchedAt time.Time  `json:"fetched_at"`
+}
+
+// Log type constants
+const (
+	LogTypeStatus   = "status"   // VNish: state changes
+	LogTypeMiner    = "miner"    // VNish: hardware init
+	LogTypeSystem   = "system"   // VNish: kernel boot
+	LogTypeAutotune = "autotune" // VNish: autotune ops
+	LogTypeMessages = "messages" // VNish: syslog
+	LogTypeAPI      = "api"      // VNish: API access
+	LogTypeKernel   = "kernel"   // Stock: kernel logs
+)

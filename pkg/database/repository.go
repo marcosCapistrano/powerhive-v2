@@ -84,6 +84,19 @@ type Repository interface {
 	GetMinerNote(ctx context.Context, minerID int64, key string) (*MinerNote, error)
 	UpsertMinerNote(ctx context.Context, n *MinerNote) error
 	DeleteMinerNote(ctx context.Context, minerID int64, key string) error
+
+	// Log Sessions
+	GetCurrentLogSession(ctx context.Context, minerID int64) (*MinerLogSession, error)
+	GetLogSessionByBootTime(ctx context.Context, minerID int64, bootTime time.Time) (*MinerLogSession, error)
+	GetLogSessions(ctx context.Context, minerID int64) ([]*MinerLogSession, error)
+	CreateLogSession(ctx context.Context, session *MinerLogSession) error
+	EndLogSession(ctx context.Context, sessionID int64, endTime time.Time, reason string) error
+
+	// Logs
+	InsertLogs(ctx context.Context, logs []*MinerLog) error
+	GetSessionLogs(ctx context.Context, sessionID int64, logType string, limit, offset int) ([]*MinerLog, error)
+	GetLastLogTime(ctx context.Context, sessionID int64, logType string) (*time.Time, error)
+	GetLogCount(ctx context.Context, sessionID int64, logType string) (int, error)
 }
 
 // MinerWithDetails contains a miner with all related data.
