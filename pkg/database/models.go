@@ -9,22 +9,24 @@ import (
 
 // Miner represents a mining device in the database.
 // This is the core entity that other tables reference.
+// MAC address is the primary unique identifier (IPs can change with DHCP).
 type Miner struct {
-	ID              int64            `json:"id"`
-	IPAddress       string           `json:"ip_address"`
-	MACAddress      string           `json:"mac_address"`
-	Hostname        string           `json:"hostname"`
-	SerialNumber    string           `json:"serial_number"`
+	ID              int64              `json:"id"`
+	MACAddress      string             `json:"mac_address"`      // Primary unique identifier
+	IPAddress       string             `json:"ip_address"`       // Current IP (can change)
+	Hostname        string             `json:"hostname"`
+	SerialNumber    string             `json:"serial_number"`
 	FirmwareType    miner.FirmwareType `json:"firmware_type"`
-	FirmwareVersion string           `json:"firmware_version"`
-	Model           string           `json:"model"`
-	MinerType       string           `json:"miner_type"` // Full name e.g. "Antminer S19"
-	Algorithm       string           `json:"algorithm"`
-	Platform        string           `json:"platform"`        // VNish: "xil"
-	HRMeasure       string           `json:"hr_measure"`      // Hashrate unit e.g. "GH/s", "TH/s"
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
-	LastSeenAt      time.Time        `json:"last_seen_at"`
+	FirmwareVersion string             `json:"firmware_version"`
+	Model           string             `json:"model"`
+	MinerType       string             `json:"miner_type"`       // Full name e.g. "Antminer S19"
+	Algorithm       string             `json:"algorithm"`
+	Platform        string             `json:"platform"`         // VNish: "xil"
+	HRMeasure       string             `json:"hr_measure"`       // Hashrate unit e.g. "GH/s", "TH/s"
+	IsOnline        bool               `json:"is_online"`        // Online/offline status
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	LastSeenAt      time.Time          `json:"last_seen_at"`
 }
 
 // MinerNetwork represents network configuration for a miner.

@@ -27,7 +27,7 @@ func WithProberTimeout(timeout time.Duration) ProberOption {
 func NewProber(auth *DigestAuth, opts ...ProberOption) *Prober {
 	p := &Prober{
 		auth:    auth,
-		timeout: 5 * time.Second,
+		timeout: 3 * time.Second,
 	}
 
 	for _, opt := range opts {

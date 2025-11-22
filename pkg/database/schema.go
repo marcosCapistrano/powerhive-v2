@@ -4,10 +4,11 @@ package database
 // All tables use INTEGER PRIMARY KEY for auto-increment IDs.
 const Schema = `
 -- Miners table: Core device identity
+-- MAC address is the primary unique identifier (IPs can change with DHCP)
 CREATE TABLE IF NOT EXISTS miners (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ip_address TEXT NOT NULL,
-    mac_address TEXT,
+    mac_address TEXT NOT NULL UNIQUE,  -- Primary identifier (hardware-level)
+    ip_address TEXT NOT NULL,          -- Current IP (can change)
     hostname TEXT,
     serial_number TEXT,
     firmware_type TEXT NOT NULL, -- 'vnish', 'stock', 'braiins', 'unknown'
@@ -17,15 +18,17 @@ CREATE TABLE IF NOT EXISTS miners (
     algorithm TEXT,              -- e.g., "sha256d", "KHeavyHash"
     platform TEXT,               -- VNish: "xil"
     hr_measure TEXT,             -- Hashrate unit e.g., "GH/s"
+    is_online INTEGER DEFAULT 1, -- 1 = online, 0 = offline
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(ip_address)
+    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_miners_mac ON miners(mac_address);
+CREATE INDEX IF NOT EXISTS idx_miners_ip ON miners(ip_address);
 CREATE INDEX IF NOT EXISTS idx_miners_serial ON miners(serial_number);
 CREATE INDEX IF NOT EXISTS idx_miners_firmware ON miners(firmware_type);
+CREATE INDEX IF NOT EXISTS idx_miners_model ON miners(miner_type);
+CREATE INDEX IF NOT EXISTS idx_miners_online ON miners(is_online);
 
 -- Miner network configuration
 CREATE TABLE IF NOT EXISTS miner_network (

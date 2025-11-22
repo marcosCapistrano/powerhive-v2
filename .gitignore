@@ -1,5 +1,6 @@
 # Compiled binaries
 powerhive
+data-harvest
 *.exe
 *.exe~
 *.dll

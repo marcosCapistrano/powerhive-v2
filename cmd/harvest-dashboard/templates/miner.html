@@ -1,0 +1,455 @@
+{{define "miner.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Miner.IPAddress}} - PowerHive</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    {{template "styles"}}
+</head>
+<body>
+    <header>
+        <div class="container">
+            <a href="/" class="logo">PowerHive</a>
+            <nav>
+                <a href="/">Dashboard</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+<div class="page-header">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 class="page-title">{{.Miner.IPAddress}}</h1>
+            <p class="page-subtitle">
+                {{.Miner.MinerType}} &bull; {{.Miner.FirmwareType}} {{.Miner.FirmwareVersion}}
+                {{if .Status}}
+                <span class="badge badge-{{statusColor .Status.State}}" style="margin-left: 10px;">{{.Status.State}}</span>
+                {{end}}
+            </p>
+        </div>
+        <a href="/" style="color: var(--text-secondary);">&larr; Back to Dashboard</a>
+    </div>
+</div>
+
+<!-- Stats Overview -->
+<div class="detail-grid">
+    <div class="stat-box">
+        <div class="label">Hashrate (Avg)</div>
+        <div class="value">
+            {{if .Summary}}{{printf "%.2f" .Summary.HashrateAvg}}{{else}}-{{end}}
+            <span class="unit">{{.Miner.HRMeasure}}</span>
+        </div>
+    </div>
+    <div class="stat-box">
+        <div class="label">Power</div>
+        <div class="value">
+            {{if .Summary}}{{.Summary.PowerConsumption}}{{else}}-{{end}}
+            <span class="unit">W</span>
+        </div>
+    </div>
+    <div class="stat-box">
+        <div class="label">Efficiency</div>
+        <div class="value">
+            {{if .Summary}}{{printf "%.2f" .Summary.PowerEfficiency}}{{else}}-{{end}}
+            <span class="unit">J/TH</span>
+        </div>
+    </div>
+    <div class="stat-box">
+        <div class="label">Chip Temp</div>
+        <div class="value {{if .Summary}}text-{{tempColor .Summary.ChipTempMax}}{{end}}">
+            {{if .Summary}}{{.Summary.ChipTempMax}}{{else}}-{{end}}
+            <span class="unit">°C</span>
+        </div>
+    </div>
+</div>
+
+<!-- Secondary Stats -->
+<div class="detail-grid">
+    <div class="stat-box">
+        <div class="label">Uptime</div>
+        <div class="value">{{if .Status}}{{formatDuration .Status.UptimeSeconds}}{{else}}-{{end}}</div>
+    </div>
+    <div class="stat-box">
+        <div class="label">HW Errors</div>
+        <div class="value {{if .Summary}}{{if gt .Summary.HWErrorPercent 1.0}}text-danger{{else if gt .Summary.HWErrorPercent 0.5}}text-warning{{end}}{{end}}">
+            {{if .Summary}}{{printf "%.2f" .Summary.HWErrorPercent}}%{{else}}-{{end}}
+        </div>
+    </div>
+    <div class="stat-box">
+        <div class="label">Fans</div>
+        <div class="value">{{if .Summary}}{{.Summary.FanCount}} @ {{.Summary.FanDuty}}%{{else}}-{{end}}</div>
+    </div>
+    <div class="stat-box">
+        <div class="label">Accepted Shares</div>
+        <div class="value text-success">{{if .Summary}}{{.Summary.Accepted}}{{else}}-{{end}}</div>
+    </div>
+</div>
+
+<!-- Time Range Selector -->
+<div class="section-header">Performance Charts</div>
+<div class="time-selector">
+    {{range .TimeRanges}}
+    <a href="?range={{.}}" class="time-btn {{if eq . $.TimeRange}}active{{end}}">{{.}}</a>
+    {{end}}
+</div>
+
+<!-- Charts -->
+<div class="charts-grid">
+    <div class="chart-container">
+        <div class="chart-title">Hashrate</div>
+        <div class="chart-wrapper">
+            <canvas id="hashrateChart"></canvas>
+        </div>
+    </div>
+    <div class="chart-container">
+        <div class="chart-title">Power Consumption</div>
+        <div class="chart-wrapper">
+            <canvas id="powerChart"></canvas>
+        </div>
+    </div>
+    <div class="chart-container">
+        <div class="chart-title">Temperature</div>
+        <div class="chart-wrapper">
+            <canvas id="tempChart"></canvas>
+        </div>
+    </div>
+    <div class="chart-container">
+        <div class="chart-title">Fan Duty Cycle</div>
+        <div class="chart-wrapper">
+            <canvas id="fanChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+    <button class="tab active" onclick="showTab('chains')">Chains</button>
+    <button class="tab" onclick="showTab('pools')">Pools</button>
+    <button class="tab" onclick="showTab('hardware')">Hardware</button>
+    <button class="tab" onclick="showTab('network')">Network</button>
+</div>
+
+<!-- Chains Tab -->
+<div id="chains" class="tab-content active">
+    {{if .Chains}}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Chain</th>
+                <th>Hashrate</th>
+                <th>ASICs</th>
+                <th>Freq</th>
+                <th>PCB Temp</th>
+                <th>Chip Temp</th>
+                <th>HW Errors</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Chains}}
+            <tr>
+                <td><strong>Chain {{.ChainIndex}}</strong></td>
+                <td>{{printf "%.2f" .HashrateReal}} {{$.Miner.HRMeasure}}</td>
+                <td>{{.AsicNum}}</td>
+                <td>{{.FreqAvg}} MHz</td>
+                <td class="text-{{tempColor .TempPCB}}">{{.TempPCB}}°C</td>
+                <td class="text-{{tempColor .TempChip}}">{{.TempChip}}°C</td>
+                <td>{{.HWErrors}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="text-muted">No chain data available.</p>
+    {{end}}
+</div>
+
+<!-- Pools Tab -->
+<div id="pools" class="tab-content">
+    {{if .Pools}}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>URL</th>
+                <th>Worker</th>
+                <th>Status</th>
+                <th>Accepted</th>
+                <th>Rejected</th>
+                <th>Stale</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Pools}}
+            <tr>
+                <td>{{.PoolIndex}}</td>
+                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">{{.URL}}</td>
+                <td>{{.User}}</td>
+                <td>
+                    {{if eq .Status "Alive"}}
+                    <span class="text-success">{{.Status}}</span>
+                    {{else}}
+                    <span class="text-danger">{{.Status}}</span>
+                    {{end}}
+                </td>
+                <td class="text-success">{{.Accepted}}</td>
+                <td class="text-danger">{{.Rejected}}</td>
+                <td class="text-warning">{{.Stale}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="text-muted">No pool data available.</p>
+    {{end}}
+</div>
+
+<!-- Hardware Tab -->
+<div id="hardware" class="tab-content">
+    {{if .Hardware}}
+    <div class="detail-grid">
+        <div class="stat-box">
+            <div class="label">Chains</div>
+            <div class="value">{{.Hardware.NumChains}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Chips/Chain</div>
+            <div class="value">{{.Hardware.ChipsPerChain}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Total ASICs</div>
+            <div class="value">{{.Hardware.TotalAsicCount}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Fans</div>
+            <div class="value">{{.Hardware.FanCount}}</div>
+        </div>
+    </div>
+    {{if or .Hardware.DefaultVoltage .Hardware.DefaultFreq}}
+    <h4 class="mt-2 mb-1">Default Settings</h4>
+    <div class="detail-grid">
+        <div class="stat-box">
+            <div class="label">Voltage</div>
+            <div class="value">{{.Hardware.DefaultVoltage}} <span class="unit">mV</span></div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Frequency</div>
+            <div class="value">{{.Hardware.DefaultFreq}} <span class="unit">MHz</span></div>
+        </div>
+    </div>
+    {{end}}
+    {{else}}
+    <p class="text-muted">No hardware data available.</p>
+    {{end}}
+
+    {{if .Fans}}
+    <h4 class="mt-2 mb-1">Fan Status</h4>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Fan</th>
+                <th>RPM</th>
+                <th>Duty</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Fans}}
+            <tr>
+                <td>Fan {{.FanIndex}}</td>
+                <td>{{.RPM}}</td>
+                <td>{{.DutyCycle}}%</td>
+                <td>
+                    {{if eq .Status "ok"}}
+                    <span class="text-success">OK</span>
+                    {{else}}
+                    <span class="text-danger">{{.Status}}</span>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{end}}
+</div>
+
+<!-- Network Tab -->
+<div id="network" class="tab-content">
+    <div class="detail-grid">
+        <div class="stat-box">
+            <div class="label">IP Address</div>
+            <div class="value" style="font-size: 1.2rem;">{{.Miner.IPAddress}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">MAC Address</div>
+            <div class="value" style="font-size: 1.2rem;">{{.Miner.MACAddress}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Hostname</div>
+            <div class="value" style="font-size: 1.2rem;">{{.Miner.Hostname}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Serial</div>
+            <div class="value" style="font-size: 1rem;">{{.Miner.SerialNumber}}</div>
+        </div>
+    </div>
+    {{if .Network}}
+    <div class="detail-grid mt-2">
+        <div class="stat-box">
+            <div class="label">DHCP</div>
+            <div class="value">{{if .Network.DHCP}}Enabled{{else}}Static{{end}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Netmask</div>
+            <div class="value" style="font-size: 1rem;">{{.Network.Netmask}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Gateway</div>
+            <div class="value" style="font-size: 1rem;">{{.Network.Gateway}}</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">DNS</div>
+            <div class="value" style="font-size: 1rem;">{{.Network.DNSServers}}</div>
+        </div>
+    </div>
+    {{end}}
+</div>
+
+<script>
+// Tab switching
+function showTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
+    event.target.classList.add('active');
+}
+
+// Chart configuration
+const chartColors = {
+    primary: 'rgb(233, 69, 96)',
+    success: 'rgb(0, 210, 106)',
+    warning: 'rgb(247, 183, 49)',
+    info: 'rgb(59, 130, 246)',
+    grid: 'rgba(255, 255, 255, 0.1)'
+};
+
+const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+        legend: { display: false }
+    },
+    scales: {
+        x: {
+            grid: { color: chartColors.grid },
+            ticks: { color: '#a0a0a0', maxTicksLimit: 8 }
+        },
+        y: {
+            grid: { color: chartColors.grid },
+            ticks: { color: '#a0a0a0' }
+        }
+    }
+};
+
+// Parse metrics data
+const metrics = {{json .Metrics}};
+const labels = metrics ? metrics.map(m => new Date(m.timestamp).toLocaleTimeString()) : [];
+const hashrateData = metrics ? metrics.map(m => m.hashrate) : [];
+const powerData = metrics ? metrics.map(m => m.power_consumption) : [];
+const pcbTempData = metrics ? metrics.map(m => m.pcb_temp_max) : [];
+const chipTempData = metrics ? metrics.map(m => m.chip_temp_max) : [];
+const fanData = metrics ? metrics.map(m => m.fan_duty) : [];
+
+// Hashrate Chart
+new Chart(document.getElementById('hashrateChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            data: hashrateData,
+            borderColor: chartColors.primary,
+            backgroundColor: 'rgba(233, 69, 96, 0.1)',
+            fill: true,
+            tension: 0.4
+        }]
+    },
+    options: chartOptions
+});
+
+// Power Chart
+new Chart(document.getElementById('powerChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            data: powerData,
+            borderColor: chartColors.warning,
+            backgroundColor: 'rgba(247, 183, 49, 0.1)',
+            fill: true,
+            tension: 0.4
+        }]
+    },
+    options: chartOptions
+});
+
+// Temperature Chart
+new Chart(document.getElementById('tempChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Chip',
+                data: chipTempData,
+                borderColor: chartColors.primary,
+                tension: 0.4
+            },
+            {
+                label: 'PCB',
+                data: pcbTempData,
+                borderColor: chartColors.info,
+                tension: 0.4
+            }
+        ]
+    },
+    options: {
+        ...chartOptions,
+        plugins: {
+            legend: { display: true, labels: { color: '#a0a0a0' } }
+        }
+    }
+});
+
+// Fan Chart
+new Chart(document.getElementById('fanChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            data: fanData,
+            borderColor: chartColors.success,
+            backgroundColor: 'rgba(0, 210, 106, 0.1)',
+            fill: true,
+            tension: 0.4
+        }]
+    },
+    options: {
+        ...chartOptions,
+        scales: {
+            ...chartOptions.scales,
+            y: {
+                ...chartOptions.scales.y,
+                min: 0,
+                max: 100
+            }
+        }
+    }
+});
+</script>
+    </main>
+</body>
+</html>
+{{end}}

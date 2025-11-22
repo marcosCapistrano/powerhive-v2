@@ -33,7 +33,7 @@ func WithProberTimeout(timeout time.Duration) ProberOption {
 func NewProber(auth *AuthManager, opts ...ProberOption) *Prober {
 	p := &Prober{
 		auth:    auth,
-		timeout: 5 * time.Second,
+		timeout: 3 * time.Second,
 	}
 
 	for _, opt := range opts {
@@ -45,13 +45,14 @@ func NewProber(auth *AuthManager, opts ...ProberOption) *Prober {
 
 // Probe attempts to connect and identify VNish firmware.
 // Implements miner.FirmwareProber.
+// Note: Only calls GetInfo for fast detection. GetModel is skipped to reduce latency.
 func (p *Prober) Probe(ctx context.Context, host string) (*miner.Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
 	client := NewClient(host, p.auth, WithTimeout(p.timeout))
 
-	// Try to get info from VNish API
+	// Try to get info from VNish API (single request for fast detection)
 	info, err := client.GetInfo(ctx)
 	if err != nil {
 		return nil, err
@@ -62,17 +63,10 @@ func (p *Prober) Probe(ctx context.Context, host string) (*miner.Info, error) {
 		return nil, ErrNotVNishFirmware
 	}
 
-	// Get model info for series
-	model, err := client.GetModel(ctx)
-	series := ""
-	if err == nil && model != nil {
-		series = model.Series
-	}
-
+	// Return basic info without fetching model (can be fetched later if needed)
 	return &miner.Info{
 		Miner:           info.Miner,
 		Model:           info.Model,
-		Series:          series,
 		Firmware:        info.FWName,
 		FirmwareVersion: info.FWVersion,
 		Algorithm:       info.Algorithm,

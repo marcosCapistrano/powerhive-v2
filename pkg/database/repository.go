@@ -5,6 +5,18 @@ import (
 	"time"
 )
 
+// MinerFilter defines filtering and sorting options for listing miners.
+type MinerFilter struct {
+	// Filters
+	MinerType    string // Filter by model/type (e.g., "Antminer S19")
+	FirmwareType string // Filter by firmware ("vnish", "stock")
+	OnlineStatus string // "online", "offline", "all" (default: "all")
+
+	// Sorting
+	SortBy    string // "ip", "model", "hashrate", "power", "efficiency", "temp", "uptime", "last_seen"
+	SortOrder string // "asc", "desc" (default: "desc")
+}
+
 // Repository defines the interface for miner data storage.
 type Repository interface {
 	// Database lifecycle
@@ -16,9 +28,14 @@ type Repository interface {
 	GetMinerByIP(ctx context.Context, ip string) (*Miner, error)
 	GetMinerByMAC(ctx context.Context, mac string) (*Miner, error)
 	ListMiners(ctx context.Context) ([]*Miner, error)
+	ListMinersFiltered(ctx context.Context, filter MinerFilter) ([]*Miner, error)
 	UpdateMiner(ctx context.Context, m *Miner) error
 	DeleteMiner(ctx context.Context, id int64) error
 	UpsertMinerByIP(ctx context.Context, m *Miner) error
+	UpsertMinerByMAC(ctx context.Context, m *Miner) error
+	SetMinerOnlineStatus(ctx context.Context, id int64, online bool) error
+	MarkAllMinersOffline(ctx context.Context) error
+	GetDistinctMinerTypes(ctx context.Context) ([]string, error)
 
 	// Network
 	GetMinerNetwork(ctx context.Context, minerID int64) (*MinerNetwork, error)

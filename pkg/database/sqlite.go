@@ -81,14 +81,15 @@ func (r *SQLiteRepository) CreateMiner(ctx context.Context, m *Miner) error {
 	m.CreatedAt = now
 	m.UpdatedAt = now
 	m.LastSeenAt = now
+	m.IsOnline = true // New miners are online by default
 
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO miners (ip_address, mac_address, hostname, serial_number, firmware_type,
-			firmware_version, model, miner_type, algorithm, platform, hr_measure,
+		INSERT INTO miners (mac_address, ip_address, hostname, serial_number, firmware_type,
+			firmware_version, model, miner_type, algorithm, platform, hr_measure, is_online,
 			created_at, updated_at, last_seen_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.IPAddress, m.MACAddress, m.Hostname, m.SerialNumber, m.FirmwareType,
-		m.FirmwareVersion, m.Model, m.MinerType, m.Algorithm, m.Platform, m.HRMeasure,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.MACAddress, m.IPAddress, m.Hostname, m.SerialNumber, m.FirmwareType,
+		m.FirmwareVersion, m.Model, m.MinerType, m.Algorithm, m.Platform, m.HRMeasure, m.IsOnline,
 		m.CreatedAt, m.UpdatedAt, m.LastSeenAt)
 	if err != nil {
 		return err
@@ -100,12 +101,12 @@ func (r *SQLiteRepository) CreateMiner(ctx context.Context, m *Miner) error {
 func (r *SQLiteRepository) GetMiner(ctx context.Context, id int64) (*Miner, error) {
 	m := &Miner{}
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, ip_address, mac_address, hostname, serial_number, firmware_type,
-			firmware_version, model, miner_type, algorithm, platform, hr_measure,
+		SELECT id, mac_address, ip_address, hostname, serial_number, firmware_type,
+			firmware_version, model, miner_type, algorithm, platform, hr_measure, is_online,
 			created_at, updated_at, last_seen_at
 		FROM miners WHERE id = ?`, id).Scan(
-		&m.ID, &m.IPAddress, &m.MACAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
-		&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure,
+		&m.ID, &m.MACAddress, &m.IPAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
+		&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure, &m.IsOnline,
 		&m.CreatedAt, &m.UpdatedAt, &m.LastSeenAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -116,12 +117,12 @@ func (r *SQLiteRepository) GetMiner(ctx context.Context, id int64) (*Miner, erro
 func (r *SQLiteRepository) GetMinerByIP(ctx context.Context, ip string) (*Miner, error) {
 	m := &Miner{}
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, ip_address, mac_address, hostname, serial_number, firmware_type,
-			firmware_version, model, miner_type, algorithm, platform, hr_measure,
+		SELECT id, mac_address, ip_address, hostname, serial_number, firmware_type,
+			firmware_version, model, miner_type, algorithm, platform, hr_measure, is_online,
 			created_at, updated_at, last_seen_at
 		FROM miners WHERE ip_address = ?`, ip).Scan(
-		&m.ID, &m.IPAddress, &m.MACAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
-		&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure,
+		&m.ID, &m.MACAddress, &m.IPAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
+		&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure, &m.IsOnline,
 		&m.CreatedAt, &m.UpdatedAt, &m.LastSeenAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -132,12 +133,12 @@ func (r *SQLiteRepository) GetMinerByIP(ctx context.Context, ip string) (*Miner,
 func (r *SQLiteRepository) GetMinerByMAC(ctx context.Context, mac string) (*Miner, error) {
 	m := &Miner{}
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, ip_address, mac_address, hostname, serial_number, firmware_type,
-			firmware_version, model, miner_type, algorithm, platform, hr_measure,
+		SELECT id, mac_address, ip_address, hostname, serial_number, firmware_type,
+			firmware_version, model, miner_type, algorithm, platform, hr_measure, is_online,
 			created_at, updated_at, last_seen_at
 		FROM miners WHERE mac_address = ?`, mac).Scan(
-		&m.ID, &m.IPAddress, &m.MACAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
-		&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure,
+		&m.ID, &m.MACAddress, &m.IPAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
+		&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure, &m.IsOnline,
 		&m.CreatedAt, &m.UpdatedAt, &m.LastSeenAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -147,8 +148,8 @@ func (r *SQLiteRepository) GetMinerByMAC(ctx context.Context, mac string) (*Mine
 
 func (r *SQLiteRepository) ListMiners(ctx context.Context) ([]*Miner, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, ip_address, mac_address, hostname, serial_number, firmware_type,
-			firmware_version, model, miner_type, algorithm, platform, hr_measure,
+		SELECT id, mac_address, ip_address, hostname, serial_number, firmware_type,
+			firmware_version, model, miner_type, algorithm, platform, hr_measure, is_online,
 			created_at, updated_at, last_seen_at
 		FROM miners ORDER BY last_seen_at DESC`)
 	if err != nil {
@@ -160,8 +161,8 @@ func (r *SQLiteRepository) ListMiners(ctx context.Context) ([]*Miner, error) {
 	for rows.Next() {
 		m := &Miner{}
 		if err := rows.Scan(
-			&m.ID, &m.IPAddress, &m.MACAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
-			&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure,
+			&m.ID, &m.MACAddress, &m.IPAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
+			&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure, &m.IsOnline,
 			&m.CreatedAt, &m.UpdatedAt, &m.LastSeenAt); err != nil {
 			return nil, err
 		}
@@ -173,12 +174,12 @@ func (r *SQLiteRepository) ListMiners(ctx context.Context) ([]*Miner, error) {
 func (r *SQLiteRepository) UpdateMiner(ctx context.Context, m *Miner) error {
 	m.UpdatedAt = time.Now()
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE miners SET ip_address = ?, mac_address = ?, hostname = ?, serial_number = ?,
+		UPDATE miners SET mac_address = ?, ip_address = ?, hostname = ?, serial_number = ?,
 			firmware_type = ?, firmware_version = ?, model = ?, miner_type = ?,
-			algorithm = ?, platform = ?, hr_measure = ?, updated_at = ?, last_seen_at = ?
+			algorithm = ?, platform = ?, hr_measure = ?, is_online = ?, updated_at = ?, last_seen_at = ?
 		WHERE id = ?`,
-		m.IPAddress, m.MACAddress, m.Hostname, m.SerialNumber, m.FirmwareType,
-		m.FirmwareVersion, m.Model, m.MinerType, m.Algorithm, m.Platform, m.HRMeasure,
+		m.MACAddress, m.IPAddress, m.Hostname, m.SerialNumber, m.FirmwareType,
+		m.FirmwareVersion, m.Model, m.MinerType, m.Algorithm, m.Platform, m.HRMeasure, m.IsOnline,
 		m.UpdatedAt, m.LastSeenAt, m.ID)
 	return err
 }
@@ -197,9 +198,131 @@ func (r *SQLiteRepository) UpsertMinerByIP(ctx context.Context, m *Miner) error 
 		m.ID = existing.ID
 		m.CreatedAt = existing.CreatedAt
 		m.LastSeenAt = time.Now()
+		m.IsOnline = true
 		return r.UpdateMiner(ctx, m)
 	}
 	return r.CreateMiner(ctx, m)
+}
+
+func (r *SQLiteRepository) UpsertMinerByMAC(ctx context.Context, m *Miner) error {
+	existing, err := r.GetMinerByMAC(ctx, m.MACAddress)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		m.ID = existing.ID
+		m.CreatedAt = existing.CreatedAt
+		m.LastSeenAt = time.Now()
+		m.IsOnline = true
+		return r.UpdateMiner(ctx, m)
+	}
+	return r.CreateMiner(ctx, m)
+}
+
+func (r *SQLiteRepository) SetMinerOnlineStatus(ctx context.Context, id int64, online bool) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE miners SET is_online = ?, updated_at = ? WHERE id = ?`,
+		online, time.Now(), id)
+	return err
+}
+
+func (r *SQLiteRepository) MarkAllMinersOffline(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE miners SET is_online = 0, updated_at = ?`, time.Now())
+	return err
+}
+
+func (r *SQLiteRepository) GetDistinctMinerTypes(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT miner_type FROM miners WHERE miner_type IS NOT NULL AND miner_type != '' ORDER BY miner_type`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var types []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		types = append(types, t)
+	}
+	return types, rows.Err()
+}
+
+func (r *SQLiteRepository) ListMinersFiltered(ctx context.Context, filter MinerFilter) ([]*Miner, error) {
+	// Build query with filters
+	query := `
+		SELECT m.id, m.mac_address, m.ip_address, m.hostname, m.serial_number, m.firmware_type,
+			m.firmware_version, m.model, m.miner_type, m.algorithm, m.platform, m.hr_measure, m.is_online,
+			m.created_at, m.updated_at, m.last_seen_at
+		FROM miners m
+		LEFT JOIN miner_summary s ON m.id = s.miner_id
+		LEFT JOIN miner_status st ON m.id = st.miner_id
+		WHERE 1=1`
+
+	var args []interface{}
+
+	// Apply filters
+	if filter.MinerType != "" {
+		query += " AND m.miner_type = ?"
+		args = append(args, filter.MinerType)
+	}
+	if filter.FirmwareType != "" {
+		query += " AND m.firmware_type = ?"
+		args = append(args, filter.FirmwareType)
+	}
+	if filter.OnlineStatus == "online" {
+		query += " AND m.is_online = 1"
+	} else if filter.OnlineStatus == "offline" {
+		query += " AND m.is_online = 0"
+	}
+
+	// Apply sorting
+	sortOrder := "DESC"
+	if filter.SortOrder == "asc" {
+		sortOrder = "ASC"
+	}
+
+	switch filter.SortBy {
+	case "ip":
+		query += " ORDER BY m.ip_address " + sortOrder
+	case "model":
+		query += " ORDER BY m.miner_type " + sortOrder
+	case "hashrate":
+		query += " ORDER BY COALESCE(s.hashrate_avg, 0) " + sortOrder
+	case "power":
+		query += " ORDER BY COALESCE(s.power_consumption, 0) " + sortOrder
+	case "efficiency":
+		query += " ORDER BY COALESCE(s.power_efficiency, 0) " + sortOrder
+	case "temp":
+		query += " ORDER BY COALESCE(s.chip_temp_max, 0) " + sortOrder
+	case "uptime":
+		query += " ORDER BY COALESCE(st.uptime_seconds, 0) " + sortOrder
+	case "last_seen":
+		query += " ORDER BY m.last_seen_at " + sortOrder
+	default:
+		query += " ORDER BY m.last_seen_at DESC"
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var miners []*Miner
+	for rows.Next() {
+		m := &Miner{}
+		if err := rows.Scan(
+			&m.ID, &m.MACAddress, &m.IPAddress, &m.Hostname, &m.SerialNumber, &m.FirmwareType,
+			&m.FirmwareVersion, &m.Model, &m.MinerType, &m.Algorithm, &m.Platform, &m.HRMeasure, &m.IsOnline,
+			&m.CreatedAt, &m.UpdatedAt, &m.LastSeenAt); err != nil {
+			return nil, err
+		}
+		miners = append(miners, m)
+	}
+	return miners, rows.Err()
 }
 
 // =============================================================================

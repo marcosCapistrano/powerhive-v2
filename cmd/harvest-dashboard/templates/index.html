@@ -1,0 +1,303 @@
+{{define "index.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    {{template "styles"}}
+    <style>
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            padding: 15px 0;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filter-group label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .filter-group select {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 8px 12px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .filter-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .miner-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .miner-table th,
+        .miner-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .miner-table th {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            position: sticky;
+            top: 60px;
+        }
+        .miner-table th a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .miner-table th a:hover {
+            color: var(--text-primary);
+        }
+        .miner-table th.sorted {
+            color: var(--accent);
+        }
+        .miner-table th.sorted a {
+            color: var(--accent);
+        }
+        .miner-table tbody tr {
+            transition: background 0.2s;
+        }
+        .miner-table tbody tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+        .miner-table tbody tr.offline {
+            opacity: 0.6;
+        }
+        .miner-table tbody tr a {
+            color: inherit;
+            text-decoration: none;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-dot.online {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+        .status-dot.offline {
+            background: var(--text-secondary);
+        }
+        .sort-arrow {
+            font-size: 0.7rem;
+        }
+        .results-info {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <a href="/" class="logo">PowerHive</a>
+            <nav>
+                <a href="/">Dashboard</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="stats-bar">
+            <div class="stat-box">
+                <div class="label">Total Miners</div>
+                <div class="value">{{.TotalMiners}}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Online</div>
+                <div class="value text-success">{{.OnlineCount}}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Offline</div>
+                <div class="value {{if gt .OfflineCount 0}}text-danger{{else}}text-muted{{end}}">{{.OfflineCount}}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Total Hashrate</div>
+                <div class="value">{{printf "%.2f" .TotalHashrate}} <span class="unit">H/s</span></div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Total Power</div>
+                <div class="value">{{.TotalPower}} <span class="unit">W</span></div>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <form id="filterForm" method="GET" action="/">
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label for="status">Status:</label>
+                        <select name="status" id="status" onchange="this.form.submit()">
+                            <option value="">All</option>
+                            <option value="online" {{if eq .Filter.OnlineStatus "online"}}selected{{end}}>Online</option>
+                            <option value="offline" {{if eq .Filter.OnlineStatus "offline"}}selected{{end}}>Offline</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="model">Model:</label>
+                        <select name="model" id="model" onchange="this.form.submit()">
+                            <option value="">All Models</option>
+                            {{range .MinerTypes}}
+                            <option value="{{.}}" {{if eq . $.Filter.MinerType}}selected{{end}}>{{.}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="firmware">Firmware:</label>
+                        <select name="firmware" id="firmware" onchange="this.form.submit()">
+                            <option value="">All</option>
+                            <option value="vnish" {{if eq .Filter.FirmwareType "vnish"}}selected{{end}}>VNish</option>
+                            <option value="stock" {{if eq .Filter.FirmwareType "stock"}}selected{{end}}>Stock</option>
+                        </select>
+                    </div>
+
+                    <input type="hidden" name="sort" value="{{.Filter.SortBy}}">
+                    <input type="hidden" name="order" value="{{.Filter.SortOrder}}">
+
+                    <span class="results-info">
+                        Showing {{.FilteredCount}} of {{.TotalMiners}} miners
+                    </span>
+                </div>
+            </form>
+        </div>
+
+        {{if .Miners}}
+        <table class="miner-table">
+            <thead>
+                <tr>
+                    <th style="width: 50px;">Status</th>
+                    <th {{if eq .Filter.SortBy "ip"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=ip&order={{if and (eq .Filter.SortBy "ip") (eq .Filter.SortOrder "asc")}}desc{{else}}asc{{end}}">
+                            IP Address
+                            {{if eq .Filter.SortBy "ip"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th {{if eq .Filter.SortBy "model"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=model&order={{if and (eq .Filter.SortBy "model") (eq .Filter.SortOrder "asc")}}desc{{else}}asc{{end}}">
+                            Model
+                            {{if eq .Filter.SortBy "model"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th>Firmware</th>
+                    <th {{if eq .Filter.SortBy "hashrate"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=hashrate&order={{if and (eq .Filter.SortBy "hashrate") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
+                            Hashrate
+                            {{if eq .Filter.SortBy "hashrate"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th {{if eq .Filter.SortBy "power"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=power&order={{if and (eq .Filter.SortBy "power") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
+                            Power
+                            {{if eq .Filter.SortBy "power"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th {{if eq .Filter.SortBy "efficiency"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=efficiency&order={{if and (eq .Filter.SortBy "efficiency") (eq .Filter.SortOrder "asc")}}desc{{else}}asc{{end}}">
+                            Efficiency
+                            {{if eq .Filter.SortBy "efficiency"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th {{if eq .Filter.SortBy "temp"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=temp&order={{if and (eq .Filter.SortBy "temp") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
+                            Temp
+                            {{if eq .Filter.SortBy "temp"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th {{if eq .Filter.SortBy "uptime"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=uptime&order={{if and (eq .Filter.SortBy "uptime") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
+                            Uptime
+                            {{if eq .Filter.SortBy "uptime"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                    <th {{if eq .Filter.SortBy "last_seen"}}class="sorted"{{end}}>
+                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=last_seen&order={{if and (eq .Filter.SortBy "last_seen") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
+                            Last Seen
+                            {{if eq .Filter.SortBy "last_seen"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
+                        </a>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Miners}}
+                <tr class="{{if not .Miner.IsOnline}}offline{{end}}">
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            <span class="status-dot {{if .Miner.IsOnline}}online{{else}}offline{{end}}"></span>
+                        </a>
+                    </td>
+                    <td><a href="/miner/{{.Miner.ID}}">{{.Miner.IPAddress}}</a></td>
+                    <td><a href="/miner/{{.Miner.ID}}">{{.Miner.MinerType}}</a></td>
+                    <td><a href="/miner/{{.Miner.ID}}">{{.Miner.FirmwareType}}</a></td>
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            {{if .Summary}}{{printf "%.2f" .Summary.HashrateAvg}}{{else}}-{{end}}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            {{if .Summary}}{{.Summary.PowerConsumption}}W{{else}}-{{end}}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            {{if .Summary}}{{printf "%.2f" .Summary.PowerEfficiency}} J/TH{{else}}-{{end}}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            {{if .Summary}}<span class="text-{{tempColor .Summary.ChipTempMax}}">{{.Summary.ChipTempMax}}°C</span>{{else}}-{{end}}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            {{if .Status}}{{formatDuration .Status.UptimeSeconds}}{{else}}-{{end}}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/miner/{{.Miner.ID}}">
+                            {{formatTime .Miner.LastSeenAt}}
+                        </a>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <div class="empty-state">
+            <h3>No Miners Found</h3>
+            {{if or .Filter.MinerType .Filter.FirmwareType .Filter.OnlineStatus}}
+            <p>No miners match your current filters. <a href="/">Clear filters</a></p>
+            {{else}}
+            <p>Run <code>data-harvest scan</code> to discover miners on your network.</p>
+            {{end}}
+        </div>
+        {{end}}
+    </main>
+</body>
+</html>
+{{end}}

@@ -32,11 +32,11 @@ func WithMultiProberTimeout(timeout time.Duration) MultiProberOption {
 }
 
 // NewMultiProber creates a new multi-prober with the given firmware probers.
-// Probers are tried in order - typically VNish first (more features), then Stock.
+// Probers are tried concurrently - first successful result wins.
 func NewMultiProber(probers []miner.FirmwareProber, opts ...MultiProberOption) *MultiProber {
 	mp := &MultiProber{
 		probers: probers,
-		timeout: 5 * time.Second,
+		timeout: 3 * time.Second,
 	}
 
 	for _, opt := range opts {
@@ -47,29 +47,47 @@ func NewMultiProber(probers []miner.FirmwareProber, opts ...MultiProberOption) *
 }
 
 // Probe attempts to detect the firmware type on a host.
-// It tries each prober in order and returns the first successful result.
+// It tries all probers concurrently and returns the first successful result.
 func (mp *MultiProber) Probe(ctx context.Context, host string) (*ProbeResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, mp.timeout)
 	defer cancel()
 
-	var lastErr error
+	// Channel for results - buffered to avoid goroutine leaks
+	type probeAttempt struct {
+		result *ProbeResult
+		err    error
+	}
+	resultCh := make(chan probeAttempt, len(mp.probers))
 
+	// Launch all probers concurrently
 	for _, prober := range mp.probers {
-		info, err := prober.Probe(ctx, host)
-		if err == nil && info != nil {
-			return &ProbeResult{
-				Info:         info,
-				FirmwareType: prober.FirmwareType(),
-				Client:       prober.NewClient(host),
-			}, nil
-		}
-		lastErr = err
+		go func(p miner.FirmwareProber) {
+			info, err := p.Probe(ctx, host)
+			if err == nil && info != nil {
+				resultCh <- probeAttempt{
+					result: &ProbeResult{
+						Info:         info,
+						FirmwareType: p.FirmwareType(),
+						Client:       p.NewClient(host),
+					},
+				}
+			} else {
+				resultCh <- probeAttempt{err: err}
+			}
+		}(prober)
+	}
 
-		// Check context cancellation
+	// Wait for first success or all failures
+	var lastErr error
+	for i := 0; i < len(mp.probers); i++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		default:
+		case attempt := <-resultCh:
+			if attempt.result != nil {
+				return attempt.result, nil
+			}
+			lastErr = attempt.err
 		}
 	}
 
