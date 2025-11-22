@@ -1,6 +1,7 @@
 # Compiled binaries
 powerhive
 data-harvest
+harvest-dashboard
 *.exe
 *.exe~
 *.dll
