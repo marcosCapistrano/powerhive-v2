@@ -1,5 +1,7 @@
 package vnish
 
+import "encoding/json"
+
 // UnlockRequest is the request body for authentication.
 type UnlockRequest struct {
 	Password string `json:"pw"`
@@ -152,10 +154,50 @@ type CoolingSettings struct {
 	Mode FanMode `json:"mode"`
 }
 
+// Fan contains individual fan status (object format from newer VNish versions).
+type Fan struct {
+	ID     int    `json:"id"`
+	RPM    int    `json:"rpm"`
+	Status string `json:"status"`
+	MaxRPM int    `json:"max_rpm"`
+}
+
+// FanData handles both VNish fan response formats:
+// - Legacy: array of ints [5400, 5300, ...]
+// - Modern: array of objects [{"rpm": 5400, "status": "ok"}, ...]
+type FanData []Fan
+
+// UnmarshalJSON implements custom unmarshaling for flexible fan data.
+func (f *FanData) UnmarshalJSON(data []byte) error {
+	// Try array of objects first (modern format)
+	var fans []Fan
+	if err := json.Unmarshal(data, &fans); err == nil {
+		*f = fans
+		return nil
+	}
+
+	// Fall back to array of ints (legacy format)
+	var rpms []int
+	if err := json.Unmarshal(data, &rpms); err != nil {
+		return err
+	}
+
+	// Convert ints to Fan structs
+	*f = make([]Fan, len(rpms))
+	for i, rpm := range rpms {
+		status := "ok"
+		if rpm == 0 {
+			status = "failed"
+		}
+		(*f)[i] = Fan{RPM: rpm, Status: status}
+	}
+	return nil
+}
+
 // Cooling contains cooling status information.
 type Cooling struct {
 	FanNum   int             `json:"fan_num"`
-	Fans     []int           `json:"fans"`
+	Fans     FanData         `json:"fans"`
 	Settings CoolingSettings `json:"settings"`
 	FanDuty  int             `json:"fan_duty"`
 }
@@ -192,18 +234,37 @@ type Summary struct {
 	Miner MinerSummary `json:"miner"`
 }
 
+// ChipStatuses contains chip health status counts.
+type ChipStatuses struct {
+	Red    int `json:"red"`
+	Orange int `json:"orange"`
+	Grey   int `json:"grey"`
+}
+
+// ChainStatus contains chain operational state.
+type ChainStatus struct {
+	State string `json:"state"`
+}
+
 // Chain contains mining chain (board) information.
 type Chain struct {
-	ID          int       `json:"id"`
-	Hashrate    float64   `json:"hashrate"`
-	PCBTemp     int       `json:"pcb_temp"`
-	ChipTemp    int       `json:"chip_temp"`
-	Frequency   int       `json:"frequency"`
-	Voltage     int       `json:"voltage"`
-	ChipCount   int       `json:"chip_count"`
-	HWErrors    int       `json:"hw_errors"`
-	ChipFreqs   []int     `json:"chip_freqs"`
-	ChipVolts   []int     `json:"chip_volts"`
+	ID                 int          `json:"id"`
+	Frequency          float64      `json:"frequency"`
+	Voltage            float64      `json:"voltage"`
+	PowerConsumption   int          `json:"power_consumption"`
+	HashrateIdeal      float64      `json:"hashrate_ideal"`
+	HashrateRT         float64      `json:"hashrate_rt"`
+	HashratePercentage float64      `json:"hashrate_percentage"`
+	HRError            float64      `json:"hr_error"`
+	HWErrors           int          `json:"hw_errors"`
+	PCBTemp            TempRange    `json:"pcb_temp"`
+	ChipTemp           TempRange    `json:"chip_temp"`
+	ChipStatuses       ChipStatuses `json:"chip_statuses"`
+	Status             ChainStatus  `json:"status"`
+	// Legacy fields (may not be present in all versions)
+	ChipCount int   `json:"chip_count,omitempty"`
+	ChipFreqs []int `json:"chip_freqs,omitempty"`
+	ChipVolts []int `json:"chip_volts,omitempty"`
 }
 
 // ChainFactoryInfo contains factory information for chains.

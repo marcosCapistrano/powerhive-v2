@@ -152,15 +152,21 @@ func (m *VNishMapper) MapSummary(summary *vnish.Summary, minerID int64) *MinerSu
 func (m *VNishMapper) MapChains(chains []vnish.Chain, minerID int64) []*MinerChain {
 	result := make([]*MinerChain, len(chains))
 	for i, c := range chains {
+		// Calculate chip count from chip_statuses if chip_count not provided
+		chipCount := c.ChipCount
+		if chipCount == 0 {
+			chipCount = c.ChipStatuses.Red + c.ChipStatuses.Orange + c.ChipStatuses.Grey
+		}
 		result[i] = &MinerChain{
 			MinerID:       minerID,
 			ChainIndex:    c.ID,
-			FreqAvg:       c.Frequency,
-			HashrateReal:  c.Hashrate,
-			AsicNum:       c.ChipCount,
-			Voltage:       c.Voltage,
-			TempPCB:       c.PCBTemp,
-			TempChip:      c.ChipTemp,
+			FreqAvg:       int(c.Frequency),
+			HashrateIdeal: c.HashrateIdeal,
+			HashrateReal:  c.HashrateRT,
+			AsicNum:       chipCount,
+			Voltage:       int(c.Voltage),
+			TempPCB:       c.PCBTemp.Max,
+			TempChip:      c.ChipTemp.Max,
 			HWErrors:      c.HWErrors,
 		}
 	}
@@ -193,15 +199,19 @@ func (m *VNishMapper) MapPools(pools []vnish.Pool, minerID int64) []*MinerPool {
 // MapFans converts VNish Cooling data to database MinerFan array.
 func (m *VNishMapper) MapFans(cooling vnish.Cooling, minerID int64) []*MinerFan {
 	result := make([]*MinerFan, len(cooling.Fans))
-	for i, rpm := range cooling.Fans {
-		status := "ok"
-		if rpm == 0 {
-			status = "failed"
+	for i, fan := range cooling.Fans {
+		status := fan.Status
+		if status == "" {
+			// Derive status from RPM if not provided
+			status = "ok"
+			if fan.RPM == 0 {
+				status = "failed"
+			}
 		}
 		result[i] = &MinerFan{
 			MinerID:   minerID,
 			FanIndex:  i,
-			RPM:       rpm,
+			RPM:       fan.RPM,
 			DutyCycle: cooling.FanDuty,
 			Status:    status,
 		}

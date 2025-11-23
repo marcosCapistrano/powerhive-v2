@@ -49,6 +49,5 @@ type FirmwareType string
 const (
 	FirmwareVNish   FirmwareType = "vnish"
 	FirmwareStock   FirmwareType = "stock"
-	FirmwareBraiins FirmwareType = "braiins"
 	FirmwareUnknown FirmwareType = "unknown"
 )

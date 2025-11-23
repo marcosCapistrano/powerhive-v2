@@ -198,6 +198,23 @@ type MinerMetric struct {
 	FanDuty          int       `json:"fan_duty"`
 }
 
+// AggregatedMetric represents aggregated metrics across all miners at a point in time.
+type AggregatedMetric struct {
+	Timestamp     time.Time `json:"timestamp"`
+	TotalHashrate float64   `json:"total_hashrate"`
+	TotalPower    int       `json:"total_power"`
+	MinerCount    int       `json:"miner_count"`
+}
+
+// FanMetric represents a historical time-series data point for a single fan.
+type FanMetric struct {
+	ID        int64     `json:"id"`
+	MinerID   int64     `json:"miner_id"`
+	FanIndex  int       `json:"fan_index"`
+	Timestamp time.Time `json:"timestamp"`
+	RPM       int       `json:"rpm"` // -1 for error/failed
+}
+
 // AutotunePreset represents a VNish autotune preset.
 type AutotunePreset struct {
 	ID                int64     `json:"id"`

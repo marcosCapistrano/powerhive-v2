@@ -52,6 +52,7 @@ type Repository interface {
 	// Summary
 	GetMinerSummary(ctx context.Context, minerID int64) (*MinerSummary, error)
 	UpsertMinerSummary(ctx context.Context, s *MinerSummary) error
+	ZeroMinerSummary(ctx context.Context, minerID int64) error
 
 	// Chains
 	GetMinerChains(ctx context.Context, minerID int64) ([]*MinerChain, error)
@@ -71,7 +72,14 @@ type Repository interface {
 	// Metrics (time-series)
 	InsertMinerMetric(ctx context.Context, m *MinerMetric) error
 	GetMinerMetrics(ctx context.Context, minerID int64, from, to time.Time) ([]*MinerMetric, error)
+	GetAggregatedMetrics(ctx context.Context, from, to time.Time) ([]*AggregatedMetric, error)
+	GetAggregatedMetricsForMiners(ctx context.Context, minerIDs []int64, from, to time.Time) ([]*AggregatedMetric, error)
 	DeleteOldMetrics(ctx context.Context, minerID int64, before time.Time) error
+
+	// Fan metrics (per-fan time-series)
+	InsertFanMetrics(ctx context.Context, metrics []*FanMetric) error
+	GetFanMetrics(ctx context.Context, minerID int64, from, to time.Time) ([]*FanMetric, error)
+	DeleteOldFanMetrics(ctx context.Context, minerID int64, before time.Time) error
 
 	// Autotune presets (VNish)
 	GetAutotunePresets(ctx context.Context, minerID int64) ([]*AutotunePreset, error)

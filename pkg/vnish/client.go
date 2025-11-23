@@ -253,6 +253,47 @@ func (c *HTTPClient) request(ctx context.Context, opts requestOptions) error {
 	return nil
 }
 
+// requestRaw performs an HTTP request and returns the raw response bytes.
+func (c *HTTPClient) requestRaw(ctx context.Context, opts requestOptions) ([]byte, error) {
+	fullURL := c.baseURL + opts.endpoint
+
+	req, err := http.NewRequestWithContext(ctx, opts.method, fullURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+
+	// Add authentication if required
+	if opts.requiresAuth {
+		token := c.auth.GetToken(c.host)
+		if token == "" {
+			if err := c.EnsureAuthenticated(ctx); err != nil {
+				return nil, err
+			}
+			token = c.auth.GetToken(c.host)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, &APIError{StatusCode: resp.StatusCode, Message: string(bodyBytes), Endpoint: opts.endpoint}
+	}
+
+	return bodyBytes, nil
+}
+
 // Unlock authenticates with the miner and returns a bearer token.
 func (c *HTTPClient) Unlock(ctx context.Context) (string, error) {
 	var result UnlockResponse
@@ -349,6 +390,15 @@ func (c *HTTPClient) GetSummary(ctx context.Context) (*Summary, error) {
 		requiresAuth: true,
 	})
 	return &result, err
+}
+
+// GetSummaryRaw returns the raw JSON response from the summary endpoint (for debugging).
+func (c *HTTPClient) GetSummaryRaw(ctx context.Context) ([]byte, error) {
+	return c.requestRaw(ctx, requestOptions{
+		method:       http.MethodGet,
+		endpoint:     "/summary",
+		requiresAuth: true,
+	})
 }
 
 // GetPerfSummary returns performance summary with autotune info.

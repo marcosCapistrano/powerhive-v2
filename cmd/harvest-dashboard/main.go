@@ -26,6 +26,7 @@ var staticFS embed.FS
 type Server struct {
 	repo      database.Repository
 	templates *template.Template
+	sseHub    *SSEHub
 }
 
 // Config holds server configuration.
@@ -50,9 +51,13 @@ func main() {
 		log.Fatalf("Failed to parse templates: %v", err)
 	}
 
+	// Create SSE hub
+	sseHub := NewSSEHub(repo)
+
 	server := &Server{
 		repo:      repo,
 		templates: tmpl,
+		sseHub:    sseHub,
 	}
 
 	// Setup routes
@@ -68,6 +73,11 @@ func main() {
 	// API endpoints
 	mux.HandleFunc("/api/miners", server.handleAPIMiners)
 	mux.HandleFunc("/api/miner/", server.handleAPIMiner)
+	mux.HandleFunc("/api/metrics/aggregate", server.handleAPIAggregateMetrics)
+
+	// SSE endpoints for live updates
+	mux.HandleFunc("/api/sse/dashboard", sseHub.handleDashboardSSE)
+	mux.HandleFunc("/api/sse/miner/", sseHub.handleMinerSSE)
 
 	log.Printf("Starting dashboard on http://localhost:%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
@@ -181,9 +191,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	// Gather summary data for each miner
 	type MinerView struct {
-		Miner   *database.Miner
-		Status  *database.MinerStatus
-		Summary *database.MinerSummary
+		Miner       *database.Miner
+		Status      *database.MinerStatus
+		Summary     *database.MinerSummary
+		ChainStates []string
+		FanStates   []string
+		Preset      string
 	}
 
 	var minerViews []MinerView
@@ -192,35 +205,43 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var onlineCount, offlineCount int
 	var runningCount, failedCount int
 
-	// Calculate stats from all miners (not filtered)
-	for _, m := range allMiners {
-		status, _ := s.repo.GetMinerStatus(ctx, m.ID)
-		summary, _ := s.repo.GetMinerSummary(ctx, m.ID)
+	// Build view models and calculate stats from filtered miners
+	for _, m := range miners {
+		mv := MinerView{Miner: m}
+		mv.Status, _ = s.repo.GetMinerStatus(ctx, m.ID)
+		mv.Summary, _ = s.repo.GetMinerSummary(ctx, m.ID)
 
+		// Calculate stats from filtered miners
 		if m.IsOnline {
 			onlineCount++
 		} else {
 			offlineCount++
 		}
 
-		if status != nil && status.State == "running" {
+		if mv.Status != nil && mv.Status.State == "running" {
 			runningCount++
 		}
-		if status != nil && status.State == "failure" {
+		if mv.Status != nil && mv.Status.State == "failure" {
 			failedCount++
 		}
 
-		if summary != nil {
-			totalHashrate += summary.HashrateAvg
-			totalPower += summary.PowerConsumption
+		if mv.Summary != nil {
+			totalHashrate += mv.Summary.HashrateAvg
+			totalPower += mv.Summary.PowerConsumption
 		}
-	}
 
-	// Build view models for filtered miners
-	for _, m := range miners {
-		mv := MinerView{Miner: m}
-		mv.Status, _ = s.repo.GetMinerStatus(ctx, m.ID)
-		mv.Summary, _ = s.repo.GetMinerSummary(ctx, m.ID)
+		// Get chains and compute health states
+		chains, _ := s.repo.GetMinerChains(ctx, m.ID)
+		mv.ChainStates = computeChainStates(chains, m.IsOnline)
+
+		// Get fans and compute health states
+		fans, _ := s.repo.GetMinerFans(ctx, m.ID)
+		mv.FanStates = computeFanStates(fans, m.IsOnline)
+
+		// Get current preset
+		presets, _ := s.repo.GetAutotunePresets(ctx, m.ID)
+		mv.Preset = getCurrentPreset(presets)
+
 		minerViews = append(minerViews, mv)
 	}
 
@@ -367,6 +388,9 @@ func (s *Server) handleAPIMiner(w http.ResponseWriter, r *http.Request) {
 		case "metrics":
 			s.handleAPIMinerMetrics(w, r, ctx, id)
 			return
+		case "fan-metrics":
+			s.handleAPIMinerFanMetrics(w, r, ctx, id)
+			return
 		case "status":
 			s.handleAPIMinerStatus(w, r, ctx, id)
 			return
@@ -416,6 +440,34 @@ func (s *Server) handleAPIMinerMetrics(w http.ResponseWriter, r *http.Request, c
 	s.jsonResponse(w, metrics)
 }
 
+func (s *Server) handleAPIMinerFanMetrics(w http.ResponseWriter, r *http.Request, ctx context.Context, minerID int64) {
+	rangeParam := r.URL.Query().Get("range")
+	if rangeParam == "" {
+		rangeParam = "1h"
+	}
+
+	var from time.Time
+	now := time.Now()
+	switch rangeParam {
+	case "1h":
+		from = now.Add(-1 * time.Hour)
+	case "6h":
+		from = now.Add(-6 * time.Hour)
+	case "24h":
+		from = now.Add(-24 * time.Hour)
+	default:
+		from = now.Add(-1 * time.Hour)
+	}
+
+	metrics, err := s.repo.GetFanMetrics(ctx, minerID, from, now)
+	if err != nil {
+		s.jsonError(w, "Failed to load fan metrics", http.StatusInternalServerError)
+		return
+	}
+
+	s.jsonResponse(w, metrics)
+}
+
 func (s *Server) handleAPIMinerStatus(w http.ResponseWriter, r *http.Request, ctx context.Context, minerID int64) {
 	status, err := s.repo.GetMinerStatus(ctx, minerID)
 	if err != nil {
@@ -424,6 +476,67 @@ func (s *Server) handleAPIMinerStatus(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	s.jsonResponse(w, status)
+}
+
+func (s *Server) handleAPIAggregateMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	rangeParam := r.URL.Query().Get("range")
+	if rangeParam == "" {
+		rangeParam = "1h"
+	}
+
+	var from time.Time
+	now := time.Now()
+	switch rangeParam {
+	case "1h":
+		from = now.Add(-1 * time.Hour)
+	case "6h":
+		from = now.Add(-6 * time.Hour)
+	case "24h":
+		from = now.Add(-24 * time.Hour)
+	default:
+		from = now.Add(-1 * time.Hour)
+	}
+
+	// Check for filter params
+	status := r.URL.Query().Get("status")
+	model := r.URL.Query().Get("model")
+	firmware := r.URL.Query().Get("firmware")
+
+	var metrics []*database.AggregatedMetric
+	var err error
+
+	// If filters are applied, get filtered miner IDs first
+	if status != "" || model != "" || firmware != "" {
+		filter := database.MinerFilter{
+			OnlineStatus: status,
+			MinerType:    model,
+			FirmwareType: firmware,
+		}
+		miners, filterErr := s.repo.ListMinersFiltered(ctx, filter)
+		if filterErr != nil {
+			s.jsonError(w, "Failed to load miners", http.StatusInternalServerError)
+			return
+		}
+
+		// Extract miner IDs
+		minerIDs := make([]int64, len(miners))
+		for i, m := range miners {
+			minerIDs[i] = m.ID
+		}
+
+		metrics, err = s.repo.GetAggregatedMetricsForMiners(ctx, minerIDs, from, now)
+	} else {
+		metrics, err = s.repo.GetAggregatedMetrics(ctx, from, now)
+	}
+
+	if err != nil {
+		s.jsonError(w, "Failed to load metrics", http.StatusInternalServerError)
+		return
+	}
+
+	s.jsonResponse(w, metrics)
 }
 
 func (s *Server) handleAPIMinerLogs(w http.ResponseWriter, r *http.Request, ctx context.Context, minerID int64) {
@@ -497,4 +610,74 @@ func splitBy(s string, sep rune) []string {
 	}
 	result = append(result, current)
 	return result
+}
+
+// computeChainStates returns health state for each chain.
+// States: "good", "warning", "bad", "unknown"
+// Returns empty slice if no chain data available (renders as dash).
+func computeChainStates(chains []*database.MinerChain, isOnline bool) []string {
+	if len(chains) == 0 {
+		return []string{} // No data available
+	}
+	if !isOnline {
+		// Offline: show unknown (grey) for each chain
+		states := make([]string, len(chains))
+		for i := range states {
+			states[i] = "unknown"
+		}
+		return states
+	}
+
+	states := make([]string, len(chains))
+	for i, c := range chains {
+		if c.HashrateReal <= 0 {
+			states[i] = "bad"
+		} else if c.TempChip >= 85 || c.HWErrors > 100 {
+			states[i] = "bad"
+		} else if c.TempChip >= 75 || c.HWErrors > 10 {
+			states[i] = "warning"
+		} else {
+			states[i] = "good"
+		}
+	}
+	return states
+}
+
+// computeFanStates returns health state for each fan.
+// States: "good", "warning", "bad", "unknown"
+// Returns empty slice if no fan data available (renders as dash).
+func computeFanStates(fans []*database.MinerFan, isOnline bool) []string {
+	if len(fans) == 0 {
+		return []string{} // No data available
+	}
+	if !isOnline {
+		// Offline: show unknown (grey) for each fan
+		states := make([]string, len(fans))
+		for i := range states {
+			states[i] = "unknown"
+		}
+		return states
+	}
+
+	states := make([]string, len(fans))
+	for i, f := range fans {
+		if f.Status == "failed" || f.RPM == 0 {
+			states[i] = "bad"
+		} else if f.DutyCycle >= 95 {
+			states[i] = "warning"
+		} else {
+			states[i] = "good"
+		}
+	}
+	return states
+}
+
+// getCurrentPreset returns the name of the active autotune preset.
+func getCurrentPreset(presets []*database.AutotunePreset) string {
+	for _, p := range presets {
+		if p.IsCurrent {
+			return p.Name
+		}
+	}
+	return "-"
 }

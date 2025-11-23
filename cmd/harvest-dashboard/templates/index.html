@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="/static/style.css">
     {{template "styles"}}
     <style>
@@ -75,16 +76,13 @@
         }
         .miner-table tbody tr {
             transition: background 0.2s;
+            cursor: pointer;
         }
         .miner-table tbody tr:hover {
-            background: rgba(255,255,255,0.02);
+            background: rgba(255,255,255,0.05);
         }
         .miner-table tbody tr.offline {
             opacity: 0.6;
-        }
-        .miner-table tbody tr a {
-            color: inherit;
-            text-decoration: none;
         }
         .status-dot {
             display: inline-block;
@@ -108,6 +106,128 @@
             font-size: 0.9rem;
             margin-left: auto;
         }
+        .live-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .live-indicator.connected {
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        .live-indicator.disconnected {
+            background: var(--danger);
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .miner-cell .external-icon {
+            opacity: 0;
+            font-size: 0.75em;
+            transition: opacity 0.2s;
+            color: var(--accent);
+        }
+        body.ctrl-held .miner-table tbody tr:hover .external-icon {
+            opacity: 1;
+        }
+        /* Miner cell with stacked content */
+        .miner-cell {
+            line-height: 1.4;
+        }
+        .miner-cell .miner-ip {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
+        .miner-cell .miner-model {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        /* Temp cell with stacked values */
+        .temp-cell {
+            line-height: 1.3;
+        }
+        .temp-cell .temp-chip {
+            font-weight: 500;
+        }
+        .temp-cell .temp-pcb {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        /* Health indicators */
+        .health-indicators {
+            display: flex;
+            gap: 3px;
+        }
+        .health-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+        .health-dot.good {
+            background: var(--success);
+        }
+        .health-dot.warning {
+            background: var(--warning);
+        }
+        .health-dot.bad {
+            background: var(--danger);
+        }
+        .health-dot.unknown {
+            background: var(--text-secondary);
+            opacity: 0.4;
+        }
+        /* Chart section */
+        .chart-section {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .chart-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+        .time-selector {
+            display: flex;
+            gap: 5px;
+        }
+        .time-btn {
+            padding: 5px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .time-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--accent);
+        }
+        .time-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+        .chart-container {
+            height: 200px;
+        }
     </style>
 </head>
 <body>
@@ -124,23 +244,38 @@
         <div class="stats-bar">
             <div class="stat-box">
                 <div class="label">Total Miners</div>
-                <div class="value">{{.TotalMiners}}</div>
+                <div class="value" data-stat="total-miners">{{.TotalMiners}}</div>
             </div>
             <div class="stat-box">
                 <div class="label">Online</div>
-                <div class="value text-success">{{.OnlineCount}}</div>
+                <div class="value text-success" data-stat="online-count">{{.OnlineCount}}</div>
             </div>
             <div class="stat-box">
                 <div class="label">Offline</div>
-                <div class="value {{if gt .OfflineCount 0}}text-danger{{else}}text-muted{{end}}">{{.OfflineCount}}</div>
+                <div class="value {{if gt .OfflineCount 0}}text-danger{{else}}text-muted{{end}}" data-stat="offline-count">{{.OfflineCount}}</div>
             </div>
             <div class="stat-box">
                 <div class="label">Total Hashrate</div>
-                <div class="value">{{printf "%.2f" .TotalHashrate}} <span class="unit">H/s</span></div>
+                <div class="value"><span data-stat="total-hashrate">{{printf "%.2f" .TotalHashrate}}</span> <span class="unit">H/s</span></div>
             </div>
             <div class="stat-box">
                 <div class="label">Total Power</div>
-                <div class="value">{{.TotalPower}} <span class="unit">W</span></div>
+                <div class="value"><span data-stat="total-power">{{.TotalPower}}</span> <span class="unit">W</span></div>
+            </div>
+        </div>
+
+        <!-- Hashrate Chart -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <h3>Hashrate Over Time</h3>
+                <div class="time-selector">
+                    <a href="#" class="time-btn active" data-range="1h">1h</a>
+                    <a href="#" class="time-btn" data-range="6h">6h</a>
+                    <a href="#" class="time-btn" data-range="24h">24h</a>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="hashrateChart"></canvas>
             </div>
         </div>
 
@@ -190,98 +325,70 @@
         <table class="miner-table">
             <thead>
                 <tr>
-                    <th style="width: 50px;">Status</th>
-                    <th {{if eq .Filter.SortBy "ip"}}class="sorted"{{end}}>
-                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=ip&order={{if and (eq .Filter.SortBy "ip") (eq .Filter.SortOrder "asc")}}desc{{else}}asc{{end}}">
-                            IP Address
-                            {{if eq .Filter.SortBy "ip"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
-                        </a>
-                    </th>
-                    <th {{if eq .Filter.SortBy "model"}}class="sorted"{{end}}>
-                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=model&order={{if and (eq .Filter.SortBy "model") (eq .Filter.SortOrder "asc")}}desc{{else}}asc{{end}}">
-                            Model
-                            {{if eq .Filter.SortBy "model"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
-                        </a>
-                    </th>
-                    <th>Firmware</th>
+                    <th style="width: 40px;"></th>
+                    <th>Miner</th>
                     <th {{if eq .Filter.SortBy "hashrate"}}class="sorted"{{end}}>
                         <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=hashrate&order={{if and (eq .Filter.SortBy "hashrate") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
                             Hashrate
                             {{if eq .Filter.SortBy "hashrate"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
                         </a>
                     </th>
-                    <th {{if eq .Filter.SortBy "power"}}class="sorted"{{end}}>
-                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=power&order={{if and (eq .Filter.SortBy "power") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
-                            Power
-                            {{if eq .Filter.SortBy "power"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
-                        </a>
-                    </th>
-                    <th {{if eq .Filter.SortBy "efficiency"}}class="sorted"{{end}}>
-                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=efficiency&order={{if and (eq .Filter.SortBy "efficiency") (eq .Filter.SortOrder "asc")}}desc{{else}}asc{{end}}">
-                            Efficiency
-                            {{if eq .Filter.SortBy "efficiency"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
-                        </a>
-                    </th>
                     <th {{if eq .Filter.SortBy "temp"}}class="sorted"{{end}}>
                         <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=temp&order={{if and (eq .Filter.SortBy "temp") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
-                            Temp
+                            Temps
                             {{if eq .Filter.SortBy "temp"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
                         </a>
                     </th>
+                    <th>Chains</th>
+                    <th>Fans</th>
+                    <th>Preset</th>
                     <th {{if eq .Filter.SortBy "uptime"}}class="sorted"{{end}}>
                         <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=uptime&order={{if and (eq .Filter.SortBy "uptime") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
                             Uptime
                             {{if eq .Filter.SortBy "uptime"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
                         </a>
                     </th>
-                    <th {{if eq .Filter.SortBy "last_seen"}}class="sorted"{{end}}>
-                        <a href="?status={{.Filter.OnlineStatus}}&model={{.Filter.MinerType}}&firmware={{.Filter.FirmwareType}}&sort=last_seen&order={{if and (eq .Filter.SortBy "last_seen") (eq .Filter.SortOrder "desc")}}asc{{else}}desc{{end}}">
-                            Last Seen
-                            {{if eq .Filter.SortBy "last_seen"}}<span class="sort-arrow">{{if eq .Filter.SortOrder "asc"}}▲{{else}}▼{{end}}</span>{{end}}
-                        </a>
-                    </th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="minerTableBody">
                 {{range .Miners}}
-                <tr class="{{if not .Miner.IsOnline}}offline{{end}}">
+                <tr class="{{if not .Miner.IsOnline}}offline{{end}}" data-miner-id="{{.Miner.ID}}" data-miner-ip="{{.Miner.IPAddress}}">
                     <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            <span class="status-dot {{if .Miner.IsOnline}}online{{else}}offline{{end}}"></span>
-                        </a>
+                        <span class="status-dot {{if .Miner.IsOnline}}online{{else}}offline{{end}}" data-miner-status></span>
                     </td>
-                    <td><a href="/miner/{{.Miner.ID}}">{{.Miner.IPAddress}}</a></td>
-                    <td><a href="/miner/{{.Miner.ID}}">{{.Miner.MinerType}}</a></td>
-                    <td><a href="/miner/{{.Miner.ID}}">{{.Miner.FirmwareType}}</a></td>
-                    <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            {{if .Summary}}{{printf "%.2f" .Summary.HashrateAvg}}{{else}}-{{end}}
-                        </a>
+                    <td class="miner-cell">
+                        <div class="miner-ip">
+                            {{.Miner.IPAddress}}<span class="external-icon">↗</span>
+                        </div>
+                        <div class="miner-model">{{.Miner.MinerType}} • {{.Miner.FirmwareType}}</div>
                     </td>
                     <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            {{if .Summary}}{{.Summary.PowerConsumption}}W{{else}}-{{end}}
-                        </a>
+                        <span data-miner-hashrate>{{if .Summary}}{{printf "%.2f" .Summary.HashrateAvg}}{{else}}-{{end}}</span>
+                        <span class="unit">{{.Miner.HRMeasure}}</span>
+                    </td>
+                    <td class="temp-cell">
+                        <div class="temp-chip" data-miner-chip-temp>
+                            {{if .Summary}}<span class="text-{{tempColor .Summary.ChipTempMax}}">{{.Summary.ChipTempMax}}°C</span>{{else}}-{{end}} <span class="text-muted">chip</span>
+                        </div>
+                        <div class="temp-pcb" data-miner-pcb-temp>
+                            {{if .Summary}}{{.Summary.PCBTempMax}}°C{{else}}-{{end}} pcb
+                        </div>
                     </td>
                     <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            {{if .Summary}}{{printf "%.2f" .Summary.PowerEfficiency}} J/TH{{else}}-{{end}}
-                        </a>
+                        <div class="health-indicators" data-miner-chains>
+                            {{if .ChainStates}}{{range .ChainStates}}<span class="health-dot {{.}}"></span>{{end}}{{else}}-{{end}}
+                        </div>
                     </td>
                     <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            {{if .Summary}}<span class="text-{{tempColor .Summary.ChipTempMax}}">{{.Summary.ChipTempMax}}°C</span>{{else}}-{{end}}
-                        </a>
+                        <div class="health-indicators" data-miner-fans>
+                            {{if .FanStates}}{{range .FanStates}}<span class="health-dot {{.}}"></span>{{end}}{{else}}-{{end}}
+                        </div>
                     </td>
                     <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            {{if .Status}}{{formatDuration .Status.UptimeSeconds}}{{else}}-{{end}}
-                        </a>
+                        <span data-miner-preset>{{.Preset}}</span>
                     </td>
                     <td>
-                        <a href="/miner/{{.Miner.ID}}">
-                            {{formatTime .Miner.LastSeenAt}}
-                        </a>
+                        <span data-miner-uptime>{{if .Status}}{{formatDuration .Status.UptimeSeconds}}{{else}}-{{end}}</span>
                     </td>
                 </tr>
                 {{end}}
@@ -298,6 +405,351 @@
         </div>
         {{end}}
     </main>
+
+    <script>
+    (function() {
+        const indicator = document.getElementById('liveIndicator');
+        let eventSource = null;
+        let reconnectAttempts = 0;
+        const maxReconnectDelay = 30000;
+
+        function connect() {
+            eventSource = new EventSource('/api/sse/dashboard');
+
+            eventSource.addEventListener('dashboard', function(e) {
+                const data = JSON.parse(e.data);
+                updateDashboard(data);
+            });
+
+            eventSource.onopen = function() {
+                console.log('[SSE] Connected');
+                reconnectAttempts = 0;
+                if (indicator) {
+                    indicator.classList.remove('disconnected');
+                    indicator.classList.add('connected');
+                    indicator.title = 'Live updates active';
+                }
+            };
+
+            eventSource.onerror = function() {
+                console.log('[SSE] Connection error');
+                eventSource.close();
+                if (indicator) {
+                    indicator.classList.remove('connected');
+                    indicator.classList.add('disconnected');
+                    indicator.title = 'Reconnecting...';
+                }
+                // Exponential backoff reconnect
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+                reconnectAttempts++;
+                setTimeout(connect, delay);
+            };
+        }
+
+        function updateDashboard(data) {
+            // Check if any filters are active
+            const statusFilter = document.getElementById('status');
+            const modelFilter = document.getElementById('model');
+            const firmwareFilter = document.getElementById('firmware');
+            const hasFilters = (statusFilter && statusFilter.value) ||
+                               (modelFilter && modelFilter.value) ||
+                               (firmwareFilter && firmwareFilter.value);
+
+            // Only update stats bar if no filters are active
+            // (filtered stats are calculated server-side on page load)
+            if (!hasFilters) {
+                updateStat('online-count', data.online_count);
+                updateStat('offline-count', data.offline_count);
+                updateStat('total-hashrate', data.total_hashrate.toFixed(2));
+                updateStat('total-power', data.total_power);
+            }
+
+            // Update miner rows (always, but SSE only sends visible miners anyway)
+            if (data.miners) {
+                data.miners.forEach(function(miner) {
+                    updateMinerRow(miner);
+                });
+            }
+        }
+
+        function updateStat(name, value) {
+            const el = document.querySelector('[data-stat="' + name + '"]');
+            if (el && el.textContent !== String(value)) {
+                el.textContent = value;
+                flashElement(el);
+            }
+        }
+
+        function updateMinerRow(miner) {
+            const row = document.querySelector('tr[data-miner-id="' + miner.id + '"]');
+            if (!row) return;
+
+            // Update online/offline status
+            const statusDot = row.querySelector('[data-miner-status]');
+            if (statusDot) {
+                const wasOnline = statusDot.classList.contains('online');
+                if (miner.is_online !== wasOnline) {
+                    statusDot.classList.toggle('online', miner.is_online);
+                    statusDot.classList.toggle('offline', !miner.is_online);
+                    row.classList.toggle('offline', !miner.is_online);
+                }
+            }
+
+            // If offline, show dashes and grey indicators
+            if (!miner.is_online) {
+                updateCell(row, '[data-miner-hashrate]', '-');
+                updateChipTemp(row, null);
+                updatePcbTemp(row, null);
+                // Use the states from server (will be "unknown" for each known chain/fan, or empty if no data)
+                updateHealthIndicators(row, '[data-miner-chains]', miner.chain_states || []);
+                updateHealthIndicators(row, '[data-miner-fans]', miner.fan_states || []);
+                updateCell(row, '[data-miner-preset]', '-');
+                updateCell(row, '[data-miner-uptime]', '-');
+                return;
+            }
+
+            // Update hashrate
+            updateCell(row, '[data-miner-hashrate]', miner.hashrate ? miner.hashrate.toFixed(2) : '-');
+
+            // Update chip temp
+            updateChipTemp(row, miner.chip_temp_max);
+
+            // Update PCB temp
+            updatePcbTemp(row, miner.pcb_temp_max);
+
+            // Update chain health indicators
+            if (miner.chain_states) {
+                updateHealthIndicators(row, '[data-miner-chains]', miner.chain_states);
+            }
+
+            // Update fan health indicators
+            if (miner.fan_states) {
+                updateHealthIndicators(row, '[data-miner-fans]', miner.fan_states);
+            }
+
+            // Update preset
+            updateCell(row, '[data-miner-preset]', miner.preset || '-');
+
+            // Update uptime
+            updateCell(row, '[data-miner-uptime]', miner.uptime ? formatDuration(miner.uptime) : '-');
+        }
+
+        function updateChipTemp(row, temp) {
+            const el = row.querySelector('[data-miner-chip-temp]');
+            if (!el) return;
+            if (temp) {
+                const tempClass = temp >= 85 ? 'danger' : (temp >= 75 ? 'warning' : 'success');
+                const newHtml = '<span class="text-' + tempClass + '">' + temp + '°C</span> <span class="text-muted">chip</span>';
+                if (el.innerHTML !== newHtml) {
+                    el.innerHTML = newHtml;
+                    flashElement(el);
+                }
+            } else {
+                if (el.textContent !== '-') {
+                    el.textContent = '-';
+                    flashElement(el);
+                }
+            }
+        }
+
+        function updatePcbTemp(row, temp) {
+            const el = row.querySelector('[data-miner-pcb-temp]');
+            if (!el) return;
+            const newText = temp ? temp + '°C pcb' : '-';
+            if (el.textContent !== newText) {
+                el.textContent = newText;
+            }
+        }
+
+        function updateHealthIndicators(row, selector, states) {
+            const container = row.querySelector(selector);
+            if (!container) return;
+
+            // If no states (empty array), show dash
+            if (!states || states.length === 0) {
+                container.innerHTML = '-';
+                return;
+            }
+
+            // Build HTML for dots
+            let html = '';
+            states.forEach(function(state) {
+                html += '<span class="health-dot ' + state + '"></span>';
+            });
+            if (container.innerHTML !== html) {
+                container.innerHTML = html;
+            }
+        }
+
+        function updateCell(row, selector, value) {
+            const el = row.querySelector(selector);
+            if (el && el.textContent !== value) {
+                el.textContent = value;
+                flashElement(el);
+            }
+        }
+
+        function flashElement(el) {
+            el.style.transition = 'background-color 0.3s';
+            el.style.backgroundColor = 'rgba(74, 222, 128, 0.2)';
+            setTimeout(function() {
+                el.style.backgroundColor = '';
+            }, 300);
+        }
+
+        function formatDuration(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            if (days > 0) return days + 'd ' + hours + 'h ' + mins + 'm';
+            if (hours > 0) return hours + 'h ' + mins + 'm';
+            return mins + 'm';
+        }
+
+        // Start connection
+        connect();
+
+        // Ctrl key tracking for row click behavior
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Control') {
+                document.body.classList.add('ctrl-held');
+            }
+        });
+        document.addEventListener('keyup', function(e) {
+            if (e.key === 'Control') {
+                document.body.classList.remove('ctrl-held');
+            }
+        });
+        // Remove ctrl-held if window loses focus (user switches tabs while holding ctrl)
+        window.addEventListener('blur', function() {
+            document.body.classList.remove('ctrl-held');
+        });
+
+        // Row click handler
+        document.getElementById('minerTableBody').addEventListener('click', function(e) {
+            const row = e.target.closest('tr[data-miner-id]');
+            if (!row) return;
+
+            const minerId = row.getAttribute('data-miner-id');
+            const minerIp = row.getAttribute('data-miner-ip');
+
+            if (e.ctrlKey || e.metaKey) {
+                // Ctrl+click: open miner web interface in new tab
+                window.open('http://' + minerIp, '_blank');
+            } else {
+                // Normal click: go to miner detail page
+                window.location.href = '/miner/' + minerId;
+            }
+        });
+
+        // Hashrate Chart
+        let hashrateChart = null;
+        let currentRange = '1h';
+
+        function initChart() {
+            const ctx = document.getElementById('hashrateChart');
+            if (!ctx) return;
+
+            hashrateChart = new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Total Hashrate',
+                        data: [],
+                        borderColor: 'rgb(74, 222, 128)',
+                        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#888', maxTicksLimit: 8 }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#888' },
+                            beginAtZero: true
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+
+            loadChartData(currentRange);
+        }
+
+        function loadChartData(range) {
+            // Get current filter values
+            const status = document.getElementById('status') ? document.getElementById('status').value : '';
+            const model = document.getElementById('model') ? document.getElementById('model').value : '';
+            const firmware = document.getElementById('firmware') ? document.getElementById('firmware').value : '';
+
+            let url = '/api/metrics/aggregate?range=' + range;
+            if (status) url += '&status=' + encodeURIComponent(status);
+            if (model) url += '&model=' + encodeURIComponent(model);
+            if (firmware) url += '&firmware=' + encodeURIComponent(firmware);
+
+            fetch(url)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (!data || !hashrateChart) return;
+
+                    const labels = data.map(function(m) {
+                        const d = new Date(m.timestamp);
+                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    });
+                    const values = data.map(function(m) { return m.total_hashrate; });
+
+                    hashrateChart.data.labels = labels;
+                    hashrateChart.data.datasets[0].data = values;
+                    hashrateChart.update('none');
+                })
+                .catch(function(err) { console.error('Chart load error:', err); });
+        }
+
+        // Time selector buttons
+        document.querySelectorAll('.time-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.querySelectorAll('.time-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                currentRange = btn.getAttribute('data-range');
+                loadChartData(currentRange);
+            });
+        });
+
+        // Initialize chart
+        initChart();
+
+        // Refresh chart every 60 seconds
+        setInterval(function() { loadChartData(currentRange); }, 60000);
+
+        // Reload chart when filters change (before page reload)
+        ['status', 'model', 'firmware'].forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', function() {
+                    // Small delay to let the value update
+                    setTimeout(function() { loadChartData(currentRange); }, 50);
+                });
+            }
+        });
+    })();
+    </script>
 </body>
 </html>
 {{end}}

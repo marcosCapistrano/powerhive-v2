@@ -202,6 +202,19 @@ CREATE TABLE IF NOT EXISTS miner_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_miner_metrics_miner_time ON miner_metrics(miner_id, timestamp);
 
+-- Historical per-fan time-series metrics
+CREATE TABLE IF NOT EXISTS fan_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    miner_id INTEGER NOT NULL,
+    fan_index INTEGER NOT NULL,
+    timestamp DATETIME NOT NULL,
+    rpm INTEGER,                     -- -1 for error/failed fan
+    FOREIGN KEY (miner_id) REFERENCES miners(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_fan_metrics_miner_time ON fan_metrics(miner_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_fan_metrics_fan ON fan_metrics(miner_id, fan_index, timestamp);
+
 -- VNish autotune presets
 CREATE TABLE IF NOT EXISTS autotune_presets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -489,6 +490,18 @@ func (r *SQLiteRepository) UpsertMinerSummary(ctx context.Context, s *MinerSumma
 	return err
 }
 
+// ZeroMinerSummary clears performance metrics for an offline miner.
+func (r *SQLiteRepository) ZeroMinerSummary(ctx context.Context, minerID int64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE miner_summary SET
+			hashrate_instant = 0, hashrate_avg = 0, hashrate_5s = 0, hashrate_30m = 0,
+			power_consumption = 0, power_efficiency = 0,
+			pcb_temp_min = 0, pcb_temp_max = 0, chip_temp_min = 0, chip_temp_max = 0,
+			fan_duty = 0, updated_at = ?
+		WHERE miner_id = ?`, time.Now(), minerID)
+	return err
+}
+
 // =============================================================================
 // Chains
 // =============================================================================
@@ -672,6 +685,162 @@ func (r *SQLiteRepository) GetMinerMetrics(ctx context.Context, minerID int64, f
 
 func (r *SQLiteRepository) DeleteOldMetrics(ctx context.Context, minerID int64, before time.Time) error {
 	_, err := r.db.ExecContext(ctx, "DELETE FROM miner_metrics WHERE miner_id = ? AND timestamp < ?", minerID, before)
+	return err
+}
+
+func (r *SQLiteRepository) GetAggregatedMetrics(ctx context.Context, from, to time.Time) ([]*AggregatedMetric, error) {
+	// Use subquery to first average each miner's metrics per minute bucket,
+	// then sum across miners. This handles multiple samples per miner per minute.
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			bucket as timestamp,
+			SUM(avg_hashrate) as total_hashrate,
+			SUM(avg_power) as total_power,
+			COUNT(*) as miner_count
+		FROM (
+			SELECT
+				miner_id,
+				strftime('%Y-%m-%d %H:%M:00', timestamp) as bucket,
+				AVG(hashrate) as avg_hashrate,
+				AVG(power_consumption) as avg_power
+			FROM miner_metrics
+			WHERE timestamp >= ? AND timestamp <= ?
+			GROUP BY miner_id, strftime('%Y-%m-%d %H:%M:00', timestamp)
+		)
+		GROUP BY bucket
+		ORDER BY bucket`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var metrics []*AggregatedMetric
+	for rows.Next() {
+		m := &AggregatedMetric{}
+		var timestampStr string
+		if err := rows.Scan(&timestampStr, &m.TotalHashrate, &m.TotalPower, &m.MinerCount); err != nil {
+			return nil, err
+		}
+		// Parse the strftime string format (YYYY-MM-DD HH:MM:SS)
+		m.Timestamp, _ = time.Parse("2006-01-02 15:04:05", timestampStr)
+		metrics = append(metrics, m)
+	}
+	return metrics, rows.Err()
+}
+
+func (r *SQLiteRepository) GetAggregatedMetricsForMiners(ctx context.Context, minerIDs []int64, from, to time.Time) ([]*AggregatedMetric, error) {
+	if len(minerIDs) == 0 {
+		return []*AggregatedMetric{}, nil
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(minerIDs))
+	args := make([]interface{}, len(minerIDs)+2)
+	for i, id := range minerIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	args[len(minerIDs)] = from
+	args[len(minerIDs)+1] = to
+
+	// Use subquery to first average each miner's metrics per minute bucket,
+	// then sum across miners. This handles multiple samples per miner per minute.
+	query := `
+		SELECT
+			bucket as timestamp,
+			SUM(avg_hashrate) as total_hashrate,
+			SUM(avg_power) as total_power,
+			COUNT(*) as miner_count
+		FROM (
+			SELECT
+				miner_id,
+				strftime('%Y-%m-%d %H:%M:00', timestamp) as bucket,
+				AVG(hashrate) as avg_hashrate,
+				AVG(power_consumption) as avg_power
+			FROM miner_metrics
+			WHERE miner_id IN (` + strings.Join(placeholders, ",") + `) AND timestamp >= ? AND timestamp <= ?
+			GROUP BY miner_id, strftime('%Y-%m-%d %H:%M:00', timestamp)
+		)
+		GROUP BY bucket
+		ORDER BY bucket`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var metrics []*AggregatedMetric
+	for rows.Next() {
+		m := &AggregatedMetric{}
+		var timestampStr string
+		if err := rows.Scan(&timestampStr, &m.TotalHashrate, &m.TotalPower, &m.MinerCount); err != nil {
+			return nil, err
+		}
+		// Parse the strftime string format (YYYY-MM-DD HH:MM:SS)
+		m.Timestamp, _ = time.Parse("2006-01-02 15:04:05", timestampStr)
+		metrics = append(metrics, m)
+	}
+	return metrics, rows.Err()
+}
+
+// =============================================================================
+// Fan Metrics (per-fan time-series)
+// =============================================================================
+
+func (r *SQLiteRepository) InsertFanMetrics(ctx context.Context, metrics []*FanMetric) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO fan_metrics (miner_id, fan_index, timestamp, rpm)
+		VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, m := range metrics {
+		result, err := stmt.ExecContext(ctx, m.MinerID, m.FanIndex, m.Timestamp, m.RPM)
+		if err != nil {
+			return err
+		}
+		m.ID, _ = result.LastInsertId()
+	}
+
+	return tx.Commit()
+}
+
+func (r *SQLiteRepository) GetFanMetrics(ctx context.Context, minerID int64, from, to time.Time) ([]*FanMetric, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, miner_id, fan_index, timestamp, rpm
+		FROM fan_metrics WHERE miner_id = ? AND timestamp >= ? AND timestamp <= ?
+		ORDER BY timestamp, fan_index`, minerID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var metrics []*FanMetric
+	for rows.Next() {
+		m := &FanMetric{}
+		if err := rows.Scan(&m.ID, &m.MinerID, &m.FanIndex, &m.Timestamp, &m.RPM); err != nil {
+			return nil, err
+		}
+		metrics = append(metrics, m)
+	}
+	return metrics, rows.Err()
+}
+
+func (r *SQLiteRepository) DeleteOldFanMetrics(ctx context.Context, minerID int64, before time.Time) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM fan_metrics WHERE miner_id = ? AND timestamp < ?", minerID, before)
 	return err
 }
 
