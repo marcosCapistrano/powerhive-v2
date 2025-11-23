@@ -1,40 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Model Settings - Power Balancer</title>
+    <title>Configurações de Modelos - Power Balancer</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <nav>
         <div class="nav-brand">Power Balancer</div>
         <div class="nav-links">
-            <a href="/">Dashboard</a>
-            <a href="/models" class="active">Models</a>
-            <a href="/logs">Logs</a>
+            <a href="/">Painel</a>
+            <a href="/models" class="active">Modelos</a>
+            <a href="/logs">Registros</a>
         </div>
     </nav>
 
     <main>
-        <h1>Model Settings</h1>
-        <p>Configure minimum and maximum preset limits for each miner model.</p>
+        <h1>Configurações de Modelos</h1>
+        <p>Configure os limites mínimo e máximo de preset para cada modelo de minerador.</p>
 
         <div class="models-container" id="models-container">
             {{range .Models}}
             <div class="model-card {{if .IsConfigured}}configured{{else}}unconfigured{{end}}">
                 <div class="model-header">
                     <h3>{{.Name}}</h3>
-                    <span class="miner-count">{{.MinerCount}} miners</span>
+                    <span class="miner-count">{{.MinerCount}} mineradores</span>
                     {{if .IsConfigured}}
-                    <span class="badge badge-success">Configured</span>
+                    <span class="badge badge-success">Configurado</span>
                     {{else}}
-                    <span class="badge badge-warning">Not Configured</span>
+                    <span class="badge badge-warning">Não Configurado</span>
                     {{end}}
                 </div>
 
                 <div class="preset-list">
-                    <strong>Available Presets:</strong>
+                    <strong>Presets Disponíveis:</strong>
                     <div class="presets">
                         {{range .Presets}}
                         <span class="preset-chip">{{.DisplayName}}</span>
@@ -44,9 +44,9 @@
 
                 <form class="model-form" onsubmit="updateModel(event, {{.ID}})">
                     <div class="form-row">
-                        <label>Min Preset (lowest power):</label>
+                        <label>Preset Mínimo (menor potência):</label>
                         <select name="min_preset_id" id="min-{{.ID}}">
-                            <option value="">-- Select --</option>
+                            <option value="">-- Selecione --</option>
                             {{$minID := 0}}{{if .MinPresetID}}{{$minID = .MinPresetID}}{{end}}
                             {{range .Presets}}
                             <option value="{{.ID}}" {{if eq .ID $minID}}selected{{end}}>{{.DisplayName}}</option>
@@ -54,20 +54,20 @@
                         </select>
                     </div>
                     <div class="form-row">
-                        <label>Max Preset (highest power):</label>
+                        <label>Preset Máximo (maior potência):</label>
                         <select name="max_preset_id" id="max-{{.ID}}">
-                            <option value="">-- Select --</option>
+                            <option value="">-- Selecione --</option>
                             {{$maxID := 0}}{{if .MaxPresetID}}{{$maxID = .MaxPresetID}}{{end}}
                             {{range .Presets}}
                             <option value="{{.ID}}" {{if eq .ID $maxID}}selected{{end}}>{{.DisplayName}}</option>
                             {{end}}
                         </select>
                     </div>
-                    <button type="submit">Save</button>
+                    <button type="submit">Salvar</button>
                 </form>
             </div>
             {{else}}
-            <p>No models discovered yet. Run a network scan first.</p>
+            <p>Nenhum modelo descoberto ainda. Execute uma varredura de rede primeiro.</p>
             {{end}}
         </div>
     </main>
@@ -93,14 +93,14 @@
                 });
 
                 if (response.ok) {
-                    alert('Model settings saved!');
+                    alert('Configurações do modelo salvas!');
                     location.reload();
                 } else {
-                    alert('Failed to save settings');
+                    alert('Falha ao salvar configurações');
                 }
             } catch (err) {
-                console.error('Error:', err);
-                alert('Failed to save settings');
+                console.error('Erro:', err);
+                alert('Falha ao salvar configurações');
             }
         }
     </script>

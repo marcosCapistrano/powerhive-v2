@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,60 +10,68 @@
     <nav>
         <div class="nav-brand">Power Balancer</div>
         <div class="nav-links">
-            <a href="/" class="active">Dashboard</a>
-            <a href="/models">Models</a>
-            <a href="/logs">Logs</a>
+            <a href="/" class="active">Painel</a>
+            <a href="/models">Modelos</a>
+            <a href="/logs">Registros</a>
         </div>
     </nav>
 
     <main>
         <div class="status-bar" id="status-bar">
             <div class="status-item">
-                <span class="status-label">State</span>
+                <span class="status-label">Estado</span>
                 <span class="status-value state-badge" id="state">{{.Status.State}}</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Generation</span>
+                <span class="status-label">Geração</span>
                 <span class="status-value" id="generation">{{printf "%.2f" .Status.GenerationMW}} MW</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Consumption</span>
+                <span class="status-label">Consumo</span>
                 <span class="status-value" id="consumption">{{printf "%.2f" .Status.ConsumptionMW}} MW</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Margin</span>
+                <span class="status-label">Margem</span>
                 <span class="status-value" id="margin">{{printf "%.1f" .Status.MarginPercent}}%</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Effective Margin</span>
+                <span class="status-label">Margem Efetiva</span>
                 <span class="status-value" id="effective-margin">{{printf "%.1f" .Status.EffectiveMarginPercent}}%</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Pending Delta</span>
+                <span class="status-label">Delta Pendente</span>
                 <span class="status-value" id="pending-delta">{{.Status.PendingDeltaW}} W</span>
             </div>
         </div>
 
         <div class="turbines">
-            <h2>Turbines</h2>
+            <h2>Turbinas</h2>
             <div class="turbine-grid">
                 <div class="turbine-card" id="generoso">
                     <h3>Generoso</h3>
-                    <div class="turbine-status">{{.Status.GenerosoStatus}}</div>
+                    <div class="turbine-status-line">
+                        <span class="status-dot {{if eq .Status.GenerosoStatus "success"}}online{{else}}offline{{end}}" id="generoso-dot"></span>
+                        <span id="generoso-status">{{if eq .Status.GenerosoStatus "success"}}Online{{else}}Offline{{end}}</span>
+                    </div>
+                    <div class="turbine-power" id="generoso-power">{{printf "%.2f" .Status.GenerosoMW}} MW</div>
                 </div>
                 <div class="turbine-card" id="nogueira">
                     <h3>Nogueira</h3>
-                    <div class="turbine-status">{{.Status.NogueiraStatus}}</div>
+                    <div class="turbine-status-line">
+                        <span class="status-dot {{if eq .Status.NogueiraStatus "success"}}online{{else}}offline{{end}}" id="nogueira-dot"></span>
+                        <span id="nogueira-status">{{if eq .Status.NogueiraStatus "success"}}Online{{else}}Offline{{end}}</span>
+                    </div>
+                    <div class="turbine-power" id="nogueira-power">{{printf "%.2f" .Status.NogueiraMW}} MW</div>
                 </div>
             </div>
         </div>
 
         <div class="miners-section">
-            <h2>Managed Miners</h2>
+            <h2>Mineradores Gerenciados</h2>
             <p>Total: <span id="miner-count">{{.Status.ManagedMinersCount}}</span> |
-               On Cooldown: <span id="cooldown-count">{{.Status.MinersOnCooldown}}</span></p>
+               Em Espera: <span id="cooldown-count">{{.Status.MinersOnCooldown}}</span></p>
             <div id="miners-table">
-                <p>Loading miners...</p>
+                <p>Carregando mineradores...</p>
             </div>
         </div>
     </main>
@@ -83,6 +91,17 @@
             document.getElementById('pending-delta').textContent = status.pending_delta_w + ' W';
             document.getElementById('miner-count').textContent = status.managed_miners_count;
             document.getElementById('cooldown-count').textContent = status.miners_on_cooldown;
+
+            // Update turbines
+            const generosoOnline = status.generoso_status === 'success';
+            document.getElementById('generoso-dot').className = 'status-dot ' + (generosoOnline ? 'online' : 'offline');
+            document.getElementById('generoso-status').textContent = generosoOnline ? 'Online' : 'Offline';
+            document.getElementById('generoso-power').textContent = status.generoso_mw.toFixed(2) + ' MW';
+
+            const nogueiraOnline = status.nogueira_status === 'success';
+            document.getElementById('nogueira-dot').className = 'status-dot ' + (nogueiraOnline ? 'online' : 'offline');
+            document.getElementById('nogueira-status').textContent = nogueiraOnline ? 'Online' : 'Offline';
+            document.getElementById('nogueira-power').textContent = status.nogueira_mw.toFixed(2) + ' MW';
         });
 
         // Load miners
@@ -92,25 +111,25 @@
                 const miners = await response.json();
                 renderMiners(miners);
             } catch (err) {
-                console.error('Failed to load miners:', err);
+                console.error('Falha ao carregar mineradores:', err);
             }
         }
 
         function renderMiners(miners) {
             const container = document.getElementById('miners-table');
             if (!miners || miners.length === 0) {
-                container.innerHTML = '<p>No miners discovered yet.</p>';
+                container.innerHTML = '<p>Nenhum minerador descoberto ainda.</p>';
                 return;
             }
 
             let html = '<table><thead><tr>';
-            html += '<th>Status</th><th>IP</th><th>Model</th><th>Preset</th><th>Enabled</th><th>Cooldown</th><th>Actions</th>';
+            html += '<th>Status</th><th>IP</th><th>Modelo</th><th>Preset</th><th>Habilitado</th><th>Espera</th><th>Ações</th>';
             html += '</tr></thead><tbody>';
 
             for (const miner of miners) {
-                const preset = miner.current_preset ? miner.current_preset.name : 'Unknown';
-                const model = miner.model ? miner.model.name : 'Unknown';
-                const enabled = miner.config && miner.config.enabled ? 'Yes' : 'No';
+                const preset = miner.current_preset ? miner.current_preset.name : 'Desconhecido';
+                const model = miner.model ? miner.model.name : 'Desconhecido';
+                const enabled = miner.config && miner.config.enabled ? 'Sim' : 'Não';
                 const cooldown = miner.cooldown ? formatCooldown(miner.cooldown.until) : '-';
                 const online = miner.is_online;
                 const statusClass = online ? 'online' : 'offline';
@@ -123,7 +142,7 @@
                 html += `<td>${preset}</td>`;
                 html += `<td>${enabled}</td>`;
                 html += `<td>${cooldown}</td>`;
-                html += `<td><button onclick="toggleMiner(${miner.id}, ${!(miner.config && miner.config.enabled)})" ${!online ? 'disabled' : ''}>${enabled === 'Yes' ? 'Disable' : 'Enable'}</button></td>`;
+                html += `<td><button onclick="toggleMiner(${miner.id}, ${!(miner.config && miner.config.enabled)})" ${!online ? 'disabled' : ''}>${enabled === 'Sim' ? 'Desabilitar' : 'Habilitar'}</button></td>`;
                 html += '</tr>';
             }
 
@@ -150,7 +169,7 @@
                 });
                 loadMiners();
             } catch (err) {
-                console.error('Failed to toggle miner:', err);
+                console.error('Falha ao alternar minerador:', err);
             }
         }
 

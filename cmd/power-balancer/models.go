@@ -139,16 +139,18 @@ type MinerWithContext struct {
 
 // SystemStatus represents the current state of the power balancer system.
 type SystemStatus struct {
-	State                 BalancerState `json:"state"`
-	GenerationMW          float64       `json:"generation_mw"`
-	ConsumptionMW         float64       `json:"consumption_mw"`
-	MarginMW              float64       `json:"margin_mw"`
-	MarginPercent         float64       `json:"margin_percent"`
-	PendingDeltaW         int           `json:"pending_delta_w"`
-	EffectiveMarginPercent float64      `json:"effective_margin_percent"`
-	ManagedMinersCount    int           `json:"managed_miners_count"`
-	MinersOnCooldown      int           `json:"miners_on_cooldown"`
-	GenerosoStatus        string        `json:"generoso_status"`
-	NogueiraStatus        string        `json:"nogueira_status"`
-	LastUpdated           time.Time     `json:"last_updated"`
+	State                  BalancerState `json:"state"`
+	GenerationMW           float64       `json:"generation_mw"`
+	ConsumptionMW          float64       `json:"consumption_mw"`
+	MarginMW               float64       `json:"margin_mw"`
+	MarginPercent          float64       `json:"margin_percent"`
+	PendingDeltaW          int           `json:"pending_delta_w"`
+	EffectiveMarginPercent float64       `json:"effective_margin_percent"`
+	ManagedMinersCount     int           `json:"managed_miners_count"`
+	MinersOnCooldown       int           `json:"miners_on_cooldown"`
+	GenerosoStatus         string        `json:"generoso_status"`
+	GenerosoMW             float64       `json:"generoso_mw"`
+	NogueiraStatus         string        `json:"nogueira_status"`
+	NogueiraMW             float64       `json:"nogueira_mw"`
+	LastUpdated            time.Time     `json:"last_updated"`
 }

@@ -1,43 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Change Logs - Power Balancer</title>
+    <title>Registro de Alterações - Power Balancer</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <nav>
         <div class="nav-brand">Power Balancer</div>
         <div class="nav-links">
-            <a href="/">Dashboard</a>
-            <a href="/models">Models</a>
-            <a href="/logs" class="active">Logs</a>
+            <a href="/">Painel</a>
+            <a href="/models">Modelos</a>
+            <a href="/logs" class="active">Registros</a>
         </div>
     </nav>
 
     <main>
-        <h1>Change Logs</h1>
-        <p>Recent preset changes made by the power balancer.</p>
+        <h1>Registro de Alterações</h1>
+        <p>Alterações recentes de preset realizadas pelo power balancer.</p>
 
         <table class="logs-table">
             <thead>
                 <tr>
-                    <th>Time</th>
-                    <th>Miner IP</th>
-                    <th>Model</th>
-                    <th>From</th>
-                    <th>To</th>
+                    <th>Hora</th>
+                    <th>IP do Minerador</th>
+                    <th>Modelo</th>
+                    <th>De</th>
+                    <th>Para</th>
                     <th>Delta</th>
-                    <th>Reason</th>
-                    <th>Margin</th>
+                    <th>Motivo</th>
+                    <th>Margem</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
                 {{range .Logs}}
                 <tr class="{{if .Success}}success{{else}}error{{end}}">
-                    <td>{{.IssuedAt.Format "2006-01-02 15:04:05"}}</td>
+                    <td>{{.IssuedAt.Format "02/01/2006 15:04:05"}}</td>
                     <td>{{.MinerIP}}</td>
                     <td>{{.ModelName}}</td>
                     <td>{{.FromPreset}}</td>
@@ -49,13 +49,13 @@
                         {{if .Success}}
                         <span class="badge badge-success">OK</span>
                         {{else}}
-                        <span class="badge badge-error" title="{{.ErrorMessage}}">FAIL</span>
+                        <span class="badge badge-error" title="{{.ErrorMessage}}">ERRO</span>
                         {{end}}
                     </td>
                 </tr>
                 {{else}}
                 <tr>
-                    <td colspan="9">No changes logged yet.</td>
+                    <td colspan="9">Nenhuma alteração registrada ainda.</td>
                 </tr>
                 {{end}}
             </tbody>

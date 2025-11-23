@@ -432,7 +432,9 @@ func (b *Balancer) updateStatus(reading *EnergyReading, pendingDelta int, effect
 		ManagedMinersCount:     count,
 		MinersOnCooldown:       cooldownCount,
 		GenerosoStatus:         reading.GenerosoStatus,
+		GenerosoMW:             reading.GenerosoMW,
 		NogueiraStatus:         reading.NogueiraStatus,
+		NogueiraMW:             reading.NogueiraMW,
 		LastUpdated:            time.Now(),
 	}
 }
