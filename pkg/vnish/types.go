@@ -395,9 +395,15 @@ type MinerMiscSettings struct {
 	QuietMode bool `json:"quiet_mode,omitempty"`
 }
 
+// OverclockSettings contains overclocking/preset settings.
+type OverclockSettings struct {
+	Preset string `json:"preset,omitempty"`
+}
+
 // MinerSettings contains miner-specific settings.
 type MinerSettings struct {
-	Misc MinerMiscSettings `json:"misc,omitempty"`
+	Misc      MinerMiscSettings  `json:"misc,omitempty"`
+	Overclock *OverclockSettings `json:"overclock,omitempty"`
 }
 
 // SettingsUpdate is the request body for updating settings.

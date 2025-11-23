@@ -2,6 +2,12 @@
 powerhive
 data-harvest
 harvest-dashboard
+power-balancer
+powerhive.db
+power-balancer.db
+
+# Environment files (contains secrets)
+.env
 *.exe
 *.exe~
 *.dll

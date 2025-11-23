@@ -28,6 +28,7 @@ type Client interface {
 
 	// Autotune
 	GetAutotunePresets(ctx context.Context) ([]AutotunePreset, error)
+	SetPreset(ctx context.Context, preset string) error
 
 	// Logs
 	GetStatusLogs(ctx context.Context) (string, error)
@@ -444,6 +445,18 @@ func (c *HTTPClient) GetAutotunePresets(ctx context.Context) ([]AutotunePreset, 
 		requiresAuth: true,
 	})
 	return result, err
+}
+
+// SetPreset sets the autotune preset.
+func (c *HTTPClient) SetPreset(ctx context.Context, preset string) error {
+	settings := &SettingsUpdate{
+		Miner: MinerSettings{
+			Overclock: &OverclockSettings{
+				Preset: preset,
+			},
+		},
+	}
+	return c.SaveSettings(ctx, settings)
 }
 
 // GetStatusLogs returns miner status logs.
