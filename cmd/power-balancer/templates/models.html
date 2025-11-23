@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Settings - Power Balancer</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">Power Balancer</div>
+        <div class="nav-links">
+            <a href="/">Dashboard</a>
+            <a href="/models" class="active">Models</a>
+            <a href="/logs">Logs</a>
+        </div>
+    </nav>
+
+    <main>
+        <h1>Model Settings</h1>
+        <p>Configure minimum and maximum preset limits for each miner model.</p>
+
+        <div class="models-container" id="models-container">
+            {{range .Models}}
+            <div class="model-card {{if .IsConfigured}}configured{{else}}unconfigured{{end}}">
+                <div class="model-header">
+                    <h3>{{.Name}}</h3>
+                    <span class="miner-count">{{.MinerCount}} miners</span>
+                    {{if .IsConfigured}}
+                    <span class="badge badge-success">Configured</span>
+                    {{else}}
+                    <span class="badge badge-warning">Not Configured</span>
+                    {{end}}
+                </div>
+
+                <div class="preset-list">
+                    <strong>Available Presets:</strong>
+                    <div class="presets">
+                        {{range .Presets}}
+                        <span class="preset-chip">{{.DisplayName}}</span>
+                        {{end}}
+                    </div>
+                </div>
+
+                <form class="model-form" onsubmit="updateModel(event, {{.ID}})">
+                    <div class="form-row">
+                        <label>Min Preset (lowest power):</label>
+                        <select name="min_preset_id" id="min-{{.ID}}">
+                            <option value="">-- Select --</option>
+                            {{$minID := 0}}{{if .MinPresetID}}{{$minID = .MinPresetID}}{{end}}
+                            {{range .Presets}}
+                            <option value="{{.ID}}" {{if eq .ID $minID}}selected{{end}}>{{.DisplayName}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>Max Preset (highest power):</label>
+                        <select name="max_preset_id" id="max-{{.ID}}">
+                            <option value="">-- Select --</option>
+                            {{$maxID := 0}}{{if .MaxPresetID}}{{$maxID = .MaxPresetID}}{{end}}
+                            {{range .Presets}}
+                            <option value="{{.ID}}" {{if eq .ID $maxID}}selected{{end}}>{{.DisplayName}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <button type="submit">Save</button>
+                </form>
+            </div>
+            {{else}}
+            <p>No models discovered yet. Run a network scan first.</p>
+            {{end}}
+        </div>
+    </main>
+
+    <script>
+        async function updateModel(event, modelID) {
+            event.preventDefault();
+            const minSelect = document.getElementById('min-' + modelID);
+            const maxSelect = document.getElementById('max-' + modelID);
+
+            const minPresetID = minSelect.value ? parseInt(minSelect.value) : null;
+            const maxPresetID = maxSelect.value ? parseInt(maxSelect.value) : null;
+
+            try {
+                const response = await fetch('/api/models/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        model_id: modelID,
+                        min_preset_id: minPresetID,
+                        max_preset_id: maxPresetID
+                    })
+                });
+
+                if (response.ok) {
+                    alert('Model settings saved!');
+                    location.reload();
+                } else {
+                    alert('Failed to save settings');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Failed to save settings');
+            }
+        }
+    </script>
+</body>
+</html>
