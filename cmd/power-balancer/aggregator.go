@@ -101,11 +101,13 @@ func (a *Aggregator) FetchLatest(ctx context.Context) (*EnergyReading, error) {
 }
 
 // toEnergyReading converts the API response to our internal model.
+// Note: API returns values in KW despite field names containing "mw", so we divide by 1000.
 func (a *Aggregator) toEnergyReading(data *AggregatorResponse) *EnergyReading {
 	r := data.Reading
 
-	generationMW := r.Totals.GenerationMW
-	consumptionMW := r.Totals.ConsumptionMW
+	// Convert KW to MW (API returns KW despite field names)
+	generationMW := r.Totals.GenerationMW / 1000.0
+	consumptionMW := r.Totals.ConsumptionMW / 1000.0
 	marginMW := generationMW - consumptionMW
 
 	var marginPercent float64
@@ -119,9 +121,9 @@ func (a *Aggregator) toEnergyReading(data *AggregatorResponse) *EnergyReading {
 		ConsumptionMW:  consumptionMW,
 		MarginMW:       marginMW,
 		MarginPercent:  marginPercent,
-		GenerosoMW:     r.Generation.Generoso.ValueMW,
+		GenerosoMW:     r.Generation.Generoso.ValueMW / 1000.0,
 		GenerosoStatus: r.Generation.Generoso.Status,
-		NogueiraMW:     r.Generation.Nogueira.ValueMW,
+		NogueiraMW:     r.Generation.Nogueira.ValueMW / 1000.0,
 		NogueiraStatus: r.Generation.Nogueira.Status,
 	}
 }

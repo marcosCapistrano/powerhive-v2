@@ -595,6 +595,12 @@ func (b *Balancer) processDiscoveredMiner(ctx context.Context, dm discovery.Disc
 		macAddr = info.System.NetworkStatus.MAC
 	}
 
+	// Skip miners without MAC address - they'll be added later if MAC becomes available
+	if macAddr == "" {
+		log.Printf("Skipping miner %s: no MAC address found", dm.IP)
+		return nil
+	}
+
 	m := &Miner{
 		MACAddress:      macAddr,
 		IPAddress:       dm.IP,
