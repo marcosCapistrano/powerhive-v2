@@ -100,12 +100,18 @@ func (b *Balancer) tick(ctx context.Context) error {
 		log.Printf("Failed to store reading: %v", err)
 	}
 
-	// 3. Clean up settled changes and expired cooldowns
+	// 3. Clean up settled changes, expired cooldowns, and pending changes for offline miners
 	if err := b.repo.ClearSettledChanges(ctx); err != nil {
 		log.Printf("Failed to clear settled changes: %v", err)
 	}
 	if err := b.cooldowns.CleanupExpired(ctx); err != nil {
 		log.Printf("Failed to clear cooldowns: %v", err)
+	}
+	// Remove pending changes for miners that went offline (their changes won't happen)
+	if cleared, err := b.repo.ClearPendingChangesForOfflineMiners(ctx); err != nil {
+		log.Printf("Failed to clear pending changes for offline miners: %v", err)
+	} else if cleared > 0 {
+		log.Printf("Cleared %d pending changes for offline miners", cleared)
 	}
 
 	// 4. Calculate effective margin (accounting for pending changes)
@@ -366,6 +372,12 @@ func (b *Balancer) executeChange(ctx context.Context, change *PresetChange, reas
 	}
 	if err != nil {
 		logEntry.ErrorMessage = err.Error()
+		// Mark miner as offline since we couldn't reach it
+		if markErr := b.repo.SetMinerOnlineStatus(ctx, miner.Miner.ID, false); markErr != nil {
+			log.Printf("Failed to mark miner %s offline: %v", miner.Miner.IPAddress, markErr)
+		} else {
+			log.Printf("Marked miner %s as offline due to connection failure", miner.Miner.IPAddress)
+		}
 	}
 	if logErr := b.repo.InsertChangeLog(ctx, logEntry); logErr != nil {
 		log.Printf("Failed to log change: %v", logErr)
@@ -442,7 +454,7 @@ func (b *Balancer) GetState() BalancerState {
 // runDiscoveryLoop periodically discovers miners on the network.
 func (b *Balancer) runDiscoveryLoop(ctx context.Context) {
 	// Initial discovery
-	if _, err := b.DiscoverMiners(ctx, b.cfg.NetworkCIDR); err != nil {
+	if _, err := b.DiscoverMinersOnNetworks(ctx, b.cfg.NetworkCIDRs); err != nil {
 		log.Printf("Initial discovery failed: %v", err)
 	}
 
@@ -454,19 +466,46 @@ func (b *Balancer) runDiscoveryLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := b.DiscoverMiners(ctx, b.cfg.NetworkCIDR); err != nil {
+			if _, err := b.DiscoverMinersOnNetworks(ctx, b.cfg.NetworkCIDRs); err != nil {
 				log.Printf("Discovery failed: %v", err)
 			}
 		}
 	}
 }
 
-// DiscoverMiners scans the network and discovers VNish miners.
-func (b *Balancer) DiscoverMiners(ctx context.Context, network string) (int, error) {
+// DiscoverMinersOnNetworks scans multiple networks and discovers VNish miners.
+func (b *Balancer) DiscoverMinersOnNetworks(ctx context.Context, networks []string) (int, error) {
 	if b.scanner == nil {
 		return 0, fmt.Errorf("scanner not initialized")
 	}
 
+	if len(networks) == 0 {
+		return 0, fmt.Errorf("no networks configured")
+	}
+
+	// Mark all existing miners as offline before scan
+	// Miners found in any network will be marked online again
+	if err := b.repo.MarkAllMinersOffline(ctx); err != nil {
+		log.Printf("Warning: failed to mark miners offline before scan: %v", err)
+	}
+
+	var totalCount int
+	for _, network := range networks {
+		count, err := b.discoverMinersOnNetwork(ctx, network)
+		if err != nil {
+			log.Printf("Discovery on %s failed: %v", network, err)
+			continue
+		}
+		totalCount += count
+	}
+
+	log.Printf("Total discovered: %d VNish miners across %d networks", totalCount, len(networks))
+	return totalCount, nil
+}
+
+// discoverMinersOnNetwork scans a single network and discovers VNish miners.
+// This is an internal helper - use DiscoverMinersOnNetworks for multi-network scanning.
+func (b *Balancer) discoverMinersOnNetwork(ctx context.Context, network string) (int, error) {
 	log.Printf("Discovering miners on %s...", network)
 
 	result, err := b.scanner.ScanNetwork(ctx, network)
@@ -560,6 +599,7 @@ func (b *Balancer) processDiscoveredMiner(ctx context.Context, dm discovery.Disc
 		ModelID:         &model.ID,
 		FirmwareType:    "vnish",
 		CurrentPresetID: currentPresetID,
+		IsOnline:        true, // Miner was just discovered/reached
 		LastSeen:        func() *time.Time { t := time.Now(); return &t }(),
 	}
 	if err := b.repo.UpsertMiner(ctx, m); err != nil {

@@ -29,7 +29,8 @@ Environment Variables (or set in .env file):
   POWER_BALANCER_DB       SQLite database path (default: power-balancer.db)
   AGGREGATOR_URL          Energy aggregator API URL
   AGGREGATOR_API_KEY      API key for energy aggregator
-  NETWORK_CIDR            Network to scan for miners (e.g., 192.168.1.0/24)
+  NETWORK_CIDR            Networks to scan for miners (comma-separated CIDRs)
+                          Example: 10.40.36.0/24,10.40.37.0/24,10.40.38.0/24
   DISCOVERY_INTERVAL      How often to scan for new miners (default: 5m)
   VNISH_PASSWORD          VNish firmware password (default: admin)
   EMERGENCY_MARGIN        Emergency threshold percent (default: 5)
@@ -88,8 +89,8 @@ func runStart(ctx context.Context, cfg *Config) {
 	if cfg.AggregatorAPIKey == "" {
 		log.Fatal("AGGREGATOR_API_KEY is required")
 	}
-	if cfg.NetworkCIDR == "" {
-		log.Fatal("NETWORK_CIDR is required")
+	if len(cfg.NetworkCIDRs) == 0 {
+		log.Fatal("NETWORK_CIDR is required (comma-separated CIDRs supported)")
 	}
 
 	// Initialize database
@@ -122,7 +123,7 @@ func runStart(ctx context.Context, cfg *Config) {
 
 	log.Printf("Power Balancer starting...")
 	log.Printf("Database: %s", cfg.DBPath)
-	log.Printf("Network: %s", cfg.NetworkCIDR)
+	log.Printf("Networks: %v", cfg.NetworkCIDRs)
 	log.Printf("Dashboard: http://localhost:%d", cfg.DashboardPort)
 	log.Printf("Thresholds: Emergency=%.0f%%, Critical=%.0f%%, Safe=%.0f%%, Recovery=%.0f%%",
 		cfg.EmergencyMargin, cfg.CriticalMargin, cfg.SafeMargin, cfg.RecoveryMargin)
@@ -152,14 +153,18 @@ func runStart(ctx context.Context, cfg *Config) {
 }
 
 func runDiscover(ctx context.Context, cfg *Config) {
-	var network string
+	// Collect networks to scan
+	var networks []string
 	if len(os.Args) >= 3 {
-		network = os.Args[2]
-	} else if cfg.NetworkCIDR != "" {
-		network = cfg.NetworkCIDR
+		// Use command-line argument(s)
+		networks = os.Args[2:]
+	} else if len(cfg.NetworkCIDRs) > 0 {
+		// Use configured networks
+		networks = cfg.NetworkCIDRs
 	} else {
-		fmt.Fprintln(os.Stderr, "Error: network CIDR required")
-		fmt.Fprintln(os.Stderr, "Usage: power-balancer discover <network>")
+		fmt.Fprintln(os.Stderr, "Error: network CIDR(s) required")
+		fmt.Fprintln(os.Stderr, "Usage: power-balancer discover <network> [network2...]")
+		fmt.Fprintln(os.Stderr, "Or set NETWORK_CIDR in environment/config")
 		os.Exit(1)
 	}
 
@@ -176,15 +181,18 @@ func runDiscover(ctx context.Context, cfg *Config) {
 		vnish.NewProber(vnishAuth, vnish.WithProberTimeout(cfg.ChangeSpacing)),
 	}
 
-	// Create balancer just for discovery
-	balancer := NewBalancer(repo, nil, nil, nil, probers, cfg)
+	// Create controller for discovery
+	controller := NewController(vnishAuth, cfg)
 
-	log.Printf("Discovering miners on %s...", network)
-	count, err := balancer.DiscoverMiners(ctx, network)
+	// Create balancer just for discovery
+	balancer := NewBalancer(repo, nil, controller, nil, probers, cfg)
+
+	log.Printf("Discovering miners on %d network(s): %v", len(networks), networks)
+	count, err := balancer.DiscoverMinersOnNetworks(ctx, networks)
 	if err != nil {
 		log.Fatalf("Discovery failed: %v", err)
 	}
-	log.Printf("Discovered %d miners", count)
+	log.Printf("Discovered %d miners total", count)
 }
 
 func runStatus(ctx context.Context, cfg *Config) {

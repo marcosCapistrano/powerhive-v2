@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -17,8 +18,8 @@ type Config struct {
 	AggregatorURL    string
 	AggregatorAPIKey string
 
-	// Network discovery
-	NetworkCIDR       string
+	// Network discovery (comma-separated CIDRs supported)
+	NetworkCIDRs      []string
 	DiscoveryInterval time.Duration
 
 	// VNish authentication
@@ -50,7 +51,7 @@ func DefaultConfig() *Config {
 		DBPath:               "power-balancer.db",
 		AggregatorURL:        "https://energy-aggregator.fly.dev/data/latest",
 		AggregatorAPIKey:     "",
-		NetworkCIDR:          "",
+		NetworkCIDRs:         []string{},
 		DiscoveryInterval:    5 * time.Minute,
 		VNishPassword:        "admin",
 		EmergencyMargin:      5.0,
@@ -84,7 +85,14 @@ func LoadConfig() *Config {
 		cfg.AggregatorAPIKey = v
 	}
 	if v := os.Getenv("NETWORK_CIDR"); v != "" {
-		cfg.NetworkCIDR = v
+		// Parse comma-separated CIDRs
+		cidrs := strings.Split(v, ",")
+		for _, cidr := range cidrs {
+			cidr = strings.TrimSpace(cidr)
+			if cidr != "" {
+				cfg.NetworkCIDRs = append(cfg.NetworkCIDRs, cidr)
+			}
+		}
 	}
 	if v := os.Getenv("DISCOVERY_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {

@@ -185,15 +185,16 @@ func (r *Repository) GetPresetByModelAndName(ctx context.Context, modelID int64,
 // UpsertMiner inserts or updates a miner by MAC address.
 func (r *Repository) UpsertMiner(ctx context.Context, m *Miner) error {
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO miners (mac_address, ip_address, model_id, firmware_type, current_preset_id, last_seen, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO miners (mac_address, ip_address, model_id, firmware_type, current_preset_id, is_online, last_seen, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(mac_address) DO UPDATE SET
 			ip_address = excluded.ip_address,
 			model_id = excluded.model_id,
 			firmware_type = excluded.firmware_type,
 			current_preset_id = excluded.current_preset_id,
+			is_online = excluded.is_online,
 			last_seen = excluded.last_seen`,
-		m.MACAddress, m.IPAddress, m.ModelID, m.FirmwareType, m.CurrentPresetID, m.LastSeen, time.Now())
+		m.MACAddress, m.IPAddress, m.ModelID, m.FirmwareType, m.CurrentPresetID, m.IsOnline, m.LastSeen, time.Now())
 	if err != nil {
 		return err
 	}
@@ -215,9 +216,9 @@ func (r *Repository) UpsertMiner(ctx context.Context, m *Miner) error {
 func (r *Repository) GetMinerByID(ctx context.Context, id int64) (*Miner, error) {
 	m := &Miner{}
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, mac_address, ip_address, model_id, firmware_type, current_preset_id, last_seen, created_at
+		SELECT id, mac_address, ip_address, model_id, firmware_type, current_preset_id, is_online, last_seen, created_at
 		FROM miners WHERE id = ?`, id).Scan(
-		&m.ID, &m.MACAddress, &m.IPAddress, &m.ModelID, &m.FirmwareType, &m.CurrentPresetID, &m.LastSeen, &m.CreatedAt)
+		&m.ID, &m.MACAddress, &m.IPAddress, &m.ModelID, &m.FirmwareType, &m.CurrentPresetID, &m.IsOnline, &m.LastSeen, &m.CreatedAt)
 	return m, err
 }
 
@@ -225,16 +226,16 @@ func (r *Repository) GetMinerByID(ctx context.Context, id int64) (*Miner, error)
 func (r *Repository) GetMinerByMAC(ctx context.Context, mac string) (*Miner, error) {
 	m := &Miner{}
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, mac_address, ip_address, model_id, firmware_type, current_preset_id, last_seen, created_at
+		SELECT id, mac_address, ip_address, model_id, firmware_type, current_preset_id, is_online, last_seen, created_at
 		FROM miners WHERE mac_address = ?`, mac).Scan(
-		&m.ID, &m.MACAddress, &m.IPAddress, &m.ModelID, &m.FirmwareType, &m.CurrentPresetID, &m.LastSeen, &m.CreatedAt)
+		&m.ID, &m.MACAddress, &m.IPAddress, &m.ModelID, &m.FirmwareType, &m.CurrentPresetID, &m.IsOnline, &m.LastSeen, &m.CreatedAt)
 	return m, err
 }
 
 // ListMiners returns all miners with optional filtering.
 func (r *Repository) ListMiners(ctx context.Context) ([]*Miner, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, mac_address, ip_address, model_id, firmware_type, current_preset_id, last_seen, created_at
+		SELECT id, mac_address, ip_address, model_id, firmware_type, current_preset_id, is_online, last_seen, created_at
 		FROM miners ORDER BY ip_address`)
 	if err != nil {
 		return nil, err
@@ -244,7 +245,7 @@ func (r *Repository) ListMiners(ctx context.Context) ([]*Miner, error) {
 	var miners []*Miner
 	for rows.Next() {
 		m := &Miner{}
-		if err := rows.Scan(&m.ID, &m.MACAddress, &m.IPAddress, &m.ModelID, &m.FirmwareType, &m.CurrentPresetID, &m.LastSeen, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.MACAddress, &m.IPAddress, &m.ModelID, &m.FirmwareType, &m.CurrentPresetID, &m.IsOnline, &m.LastSeen, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		miners = append(miners, m)
@@ -479,13 +480,13 @@ func (r *Repository) GetRecentChangeLogs(ctx context.Context, limit int) ([]*Cha
 
 // --- Aggregated Queries for Balancing ---
 
-// GetManageableMiners returns miners that can be managed (configured model, enabled, not locked).
+// GetManageableMiners returns miners that can be managed (configured model, enabled, not locked, online).
 func (r *Repository) GetManageableMiners(ctx context.Context) ([]*MinerWithContext, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			m.id, m.mac_address, m.ip_address, m.model_id, m.firmware_type, m.current_preset_id, m.last_seen,
 			mo.id, mo.name, mo.min_preset_id, mo.max_preset_id,
-			cp.id, cp.name, cp.watts,
+			cp.id, cp.name, cp.watts, cp.hashrate_th,
 			minp.id, minp.name, minp.watts,
 			maxp.id, maxp.name, maxp.watts,
 			bc.enabled, bc.priority, bc.locked,
@@ -497,8 +498,7 @@ func (r *Repository) GetManageableMiners(ctx context.Context) ([]*MinerWithConte
 		JOIN model_presets maxp ON mo.max_preset_id = maxp.id
 		JOIN balance_config bc ON m.id = bc.miner_id
 		LEFT JOIN cooldowns c ON m.id = c.miner_id
-		WHERE bc.enabled = 1 AND bc.locked = 0 AND m.firmware_type = 'vnish'
-		ORDER BY bc.priority ASC, (cp.watts - minp.watts) DESC`)
+		WHERE bc.enabled = 1 AND bc.locked = 0 AND m.firmware_type = 'vnish' AND m.is_online = 1`)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +521,7 @@ func (r *Repository) GetManageableMiners(ctx context.Context) ([]*MinerWithConte
 			&mwc.Miner.ID, &mwc.Miner.MACAddress, &mwc.Miner.IPAddress, &mwc.Miner.ModelID,
 			&mwc.Miner.FirmwareType, &mwc.Miner.CurrentPresetID, &mwc.Miner.LastSeen,
 			&mwc.Model.ID, &mwc.Model.Name, &mwc.Model.MinPresetID, &mwc.Model.MaxPresetID,
-			&mwc.CurrentPreset.ID, &mwc.CurrentPreset.Name, &mwc.CurrentPreset.Watts,
+			&mwc.CurrentPreset.ID, &mwc.CurrentPreset.Name, &mwc.CurrentPreset.Watts, &mwc.CurrentPreset.HashrateTH,
 			&mwc.MinPreset.ID, &mwc.MinPreset.Name, &mwc.MinPreset.Watts,
 			&mwc.MaxPreset.ID, &mwc.MaxPreset.Name, &mwc.MaxPreset.Watts,
 			&mwc.Config.Enabled, &mwc.Config.Priority, &mwc.Config.Locked,
@@ -531,6 +531,12 @@ func (r *Repository) GetManageableMiners(ctx context.Context) ([]*MinerWithConte
 		}
 
 		mwc.HeadroomWatts = mwc.CurrentPreset.Watts - mwc.MinPreset.Watts
+
+		// Calculate efficiency: hashrate per watt (TH/W) - higher is better
+		if mwc.CurrentPreset.Watts > 0 && mwc.CurrentPreset.HashrateTH > 0 {
+			mwc.Efficiency = mwc.CurrentPreset.HashrateTH / float64(mwc.CurrentPreset.Watts)
+		}
+
 		if cooldownUntil.Valid {
 			mwc.CooldownUntil = &cooldownUntil.Time
 			mwc.OnCooldown = cooldownUntil.Time.After(now)
@@ -549,5 +555,40 @@ func (r *Repository) CountManagedMiners(ctx context.Context) (int, error) {
 		JOIN miners m ON bc.miner_id = m.id
 		JOIN models mo ON m.model_id = mo.id
 		WHERE bc.enabled = 1 AND mo.min_preset_id IS NOT NULL AND mo.max_preset_id IS NOT NULL`).Scan(&count)
+	return count, err
+}
+
+// --- Online Status Management ---
+
+// SetMinerOnlineStatus sets the online status of a miner.
+func (r *Repository) SetMinerOnlineStatus(ctx context.Context, minerID int64, isOnline bool) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE miners SET is_online = ?, last_seen = CASE WHEN ? = 1 THEN ? ELSE last_seen END WHERE id = ?`,
+		isOnline, isOnline, time.Now(), minerID)
+	return err
+}
+
+// MarkAllMinersOffline marks all miners as offline (used before discovery scan).
+func (r *Repository) MarkAllMinersOffline(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE miners SET is_online = 0`)
+	return err
+}
+
+// ClearPendingChangesForOfflineMiners removes pending changes for miners that went offline.
+func (r *Repository) ClearPendingChangesForOfflineMiners(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM pending_changes WHERE miner_id IN (
+			SELECT id FROM miners WHERE is_online = 0
+		)`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// CountOnlineMiners returns the count of online miners.
+func (r *Repository) CountOnlineMiners(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM miners WHERE is_online = 1`).Scan(&count)
 	return count, err
 }

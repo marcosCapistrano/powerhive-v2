@@ -44,12 +44,10 @@ func (s *Strategy) CalculateReduction(ctx context.Context, targetReductionW int)
 		}
 	}
 
-	// Sort by priority (ascending), then by headroom (descending)
+	// Sort by efficiency ascending (least efficient miners reduced first)
+	// This preserves the most hashrate per watt when reducing consumption
 	sort.Slice(available, func(i, j int) bool {
-		if available[i].Config.Priority != available[j].Config.Priority {
-			return available[i].Config.Priority < available[j].Config.Priority
-		}
-		return available[i].HeadroomWatts > available[j].HeadroomWatts
+		return available[i].Efficiency < available[j].Efficiency
 	})
 
 	// Calculate changes to reach target reduction
@@ -112,13 +110,10 @@ func (s *Strategy) CalculateIncrease(ctx context.Context, targetIncreaseW int) (
 		}
 	}
 
-	// Sort by priority (descending for increase - last reduced, first increased)
-	// Then by current watts (ascending - increase lowest first)
+	// Sort by efficiency descending (most efficient miners increased first)
+	// This maximizes hashrate gained per watt when increasing consumption
 	sort.Slice(available, func(i, j int) bool {
-		if available[i].Config.Priority != available[j].Config.Priority {
-			return available[i].Config.Priority > available[j].Config.Priority
-		}
-		return available[i].CurrentPreset.Watts < available[j].CurrentPreset.Watts
+		return available[i].Efficiency > available[j].Efficiency
 	})
 
 	// Calculate changes to reach target increase

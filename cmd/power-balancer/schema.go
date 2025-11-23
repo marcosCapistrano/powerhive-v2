@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS miners (
     model_id INTEGER,
     firmware_type TEXT,
     current_preset_id INTEGER,
+    is_online INTEGER DEFAULT 0,
     last_seen DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (model_id) REFERENCES models(id),

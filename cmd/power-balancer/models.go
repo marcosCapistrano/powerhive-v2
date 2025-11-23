@@ -52,6 +52,7 @@ type Miner struct {
 	ModelID         *int64     `json:"model_id"`
 	FirmwareType    string     `json:"firmware_type"`
 	CurrentPresetID *int64     `json:"current_preset_id"`
+	IsOnline        bool       `json:"is_online"`
 	LastSeen        *time.Time `json:"last_seen"`
 	CreatedAt       time.Time  `json:"created_at"`
 
@@ -130,7 +131,8 @@ type MinerWithContext struct {
 	MinPreset     *ModelPreset
 	MaxPreset     *ModelPreset
 	Config        *BalanceConfig
-	HeadroomWatts int  // current_watts - min_watts
+	HeadroomWatts int     // current_watts - min_watts
+	Efficiency    float64 // hashrate_th / watts (TH/W) - higher is better
 	OnCooldown    bool
 	CooldownUntil *time.Time
 }

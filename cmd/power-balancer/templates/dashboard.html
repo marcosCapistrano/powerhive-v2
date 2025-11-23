@@ -104,7 +104,7 @@
             }
 
             let html = '<table><thead><tr>';
-            html += '<th>IP</th><th>Model</th><th>Preset</th><th>Enabled</th><th>Cooldown</th><th>Actions</th>';
+            html += '<th>Status</th><th>IP</th><th>Model</th><th>Preset</th><th>Enabled</th><th>Cooldown</th><th>Actions</th>';
             html += '</tr></thead><tbody>';
 
             for (const miner of miners) {
@@ -112,14 +112,18 @@
                 const model = miner.model ? miner.model.name : 'Unknown';
                 const enabled = miner.config && miner.config.enabled ? 'Yes' : 'No';
                 const cooldown = miner.cooldown ? formatCooldown(miner.cooldown.until) : '-';
+                const online = miner.is_online;
+                const statusClass = online ? 'online' : 'offline';
+                const statusText = online ? 'Online' : 'Offline';
 
-                html += '<tr>';
+                html += `<tr class="${statusClass}">`;
+                html += `<td><span class="status-dot ${statusClass}"></span> ${statusText}</td>`;
                 html += `<td>${miner.ip_address}</td>`;
                 html += `<td>${model}</td>`;
                 html += `<td>${preset}</td>`;
                 html += `<td>${enabled}</td>`;
                 html += `<td>${cooldown}</td>`;
-                html += `<td><button onclick="toggleMiner(${miner.id}, ${!(miner.config && miner.config.enabled)})">${enabled === 'Yes' ? 'Disable' : 'Enable'}</button></td>`;
+                html += `<td><button onclick="toggleMiner(${miner.id}, ${!(miner.config && miner.config.enabled)})" ${!online ? 'disabled' : ''}>${enabled === 'Yes' ? 'Disable' : 'Enable'}</button></td>`;
                 html += '</tr>';
             }
 
