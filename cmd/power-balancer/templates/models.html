@@ -28,6 +28,10 @@
                     <span class="miner-count">{{.MinerCount}} mineradores</span>
                     {{if .IsConfigured}}
                     <span class="badge badge-success">Configurado</span>
+                    <div class="preset-summary">
+                        {{if .MinPreset}}<span>Min: {{.MinPreset.DisplayName}}</span>{{end}}
+                        {{if .MaxPreset}}<span>Max: {{.MaxPreset.DisplayName}}</span>{{end}}
+                    </div>
                     {{else}}
                     <span class="badge badge-warning">Não Configurado</span>
                     {{end}}

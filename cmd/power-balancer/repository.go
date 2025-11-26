@@ -204,12 +204,20 @@ func (r *Repository) UpsertMiner(ctx context.Context, m *Miner) error {
 		id, _ := result.LastInsertId()
 		if id == 0 {
 			// Was an update, need to get existing ID
-			err = r.db.QueryRowContext(ctx, `SELECT id FROM miners WHERE mac_address = ?`, m.MACAddress).Scan(&m.ID)
+			if err := r.db.QueryRowContext(ctx, `SELECT id FROM miners WHERE mac_address = ?`, m.MACAddress).Scan(&m.ID); err != nil {
+				return fmt.Errorf("get miner id after upsert: %w", err)
+			}
 		} else {
 			m.ID = id
 		}
 	}
-	return err
+
+	// Validate ID was set
+	if m.ID == 0 {
+		return fmt.Errorf("miner ID not set after upsert for MAC %s", m.MACAddress)
+	}
+
+	return nil
 }
 
 // GetMinerByID retrieves a miner by ID with joined data.
