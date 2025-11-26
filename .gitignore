@@ -1,7 +1,4 @@
 # Compiled binaries
-powerhive
-data-harvest
-harvest-dashboard
 powerhive.db
 power-balancer.db
 
