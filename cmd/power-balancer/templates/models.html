@@ -47,9 +47,8 @@
                         <label>Preset Mínimo (menor potência):</label>
                         <select name="min_preset_id" id="min-{{.ID}}">
                             <option value="">-- Selecione --</option>
-                            {{$minID := 0}}{{if .MinPresetID}}{{$minID = .MinPresetID}}{{end}}
                             {{range .Presets}}
-                            <option value="{{.ID}}" {{if eq .ID $minID}}selected{{end}}>{{.DisplayName}}</option>
+                            <option value="{{.ID}}" {{if and $.MinPresetID (eq .ID (deref $.MinPresetID))}}selected{{end}}>{{.DisplayName}}</option>
                             {{end}}
                         </select>
                     </div>
@@ -57,9 +56,8 @@
                         <label>Preset Máximo (maior potência):</label>
                         <select name="max_preset_id" id="max-{{.ID}}">
                             <option value="">-- Selecione --</option>
-                            {{$maxID := 0}}{{if .MaxPresetID}}{{$maxID = .MaxPresetID}}{{end}}
                             {{range .Presets}}
-                            <option value="{{.ID}}" {{if eq .ID $maxID}}selected{{end}}>{{.DisplayName}}</option>
+                            <option value="{{.ID}}" {{if and $.MaxPresetID (eq .ID (deref $.MaxPresetID))}}selected{{end}}>{{.DisplayName}}</option>
                             {{end}}
                         </select>
                     </div>

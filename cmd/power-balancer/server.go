@@ -34,9 +34,17 @@ func NewServer(repo *Repository, balancer *Balancer, cfg *Config) *Server {
 		cfg:      cfg,
 	}
 
-	// Parse templates
+	// Parse templates with custom functions
+	funcMap := template.FuncMap{
+		"deref": func(p *int64) int64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+	}
 	var err error
-	s.tmpl, err = template.ParseFS(templateFS, "templates/*.html")
+	s.tmpl, err = template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		log.Printf("Warning: Failed to parse templates: %v", err)
 	}
