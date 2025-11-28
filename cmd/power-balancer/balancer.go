@@ -610,20 +610,12 @@ func (b *Balancer) processDiscoveredMiner(ctx context.Context, dm discovery.Disc
 		IsOnline:        true, // Miner was just discovered/reached
 		LastSeen:        func() *time.Time { t := time.Now(); return &t }(),
 	}
-	if err := b.repo.UpsertMiner(ctx, m); err != nil {
-		return fmt.Errorf("upsert miner: %w", err)
+	// Atomically upsert miner and create balance config in a single transaction
+	// to avoid FK constraint failures in SQLite WAL mode
+	if _, err := b.repo.UpsertMinerWithBalanceConfig(ctx, m); err != nil {
+		return fmt.Errorf("upsert miner with balance config: %w", err)
 	}
 	log.Printf("DEBUG: Miner %s (MAC: %s) upserted with ID: %d", dm.IP, m.MACAddress, m.ID)
-
-	// Validate miner ID before creating balance config
-	if m.ID == 0 {
-		return fmt.Errorf("miner ID is 0 after upsert for %s (MAC: %s)", dm.IP, m.MACAddress)
-	}
-
-	// Ensure balance config exists
-	if _, err := b.repo.GetOrCreateBalanceConfig(ctx, m.ID); err != nil {
-		return fmt.Errorf("create balance config: %w", err)
-	}
 
 	return nil
 }

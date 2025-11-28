@@ -220,6 +220,76 @@ func (r *Repository) UpsertMiner(ctx context.Context, m *Miner) error {
 	return nil
 }
 
+// UpsertMinerWithBalanceConfig atomically upserts a miner and ensures balance config exists.
+// This wraps both operations in a single transaction to avoid FK constraint failures.
+func (r *Repository) UpsertMinerWithBalanceConfig(ctx context.Context, m *Miner) (*BalanceConfig, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Upsert miner within transaction
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO miners (mac_address, ip_address, model_id, firmware_type, current_preset_id, is_online, last_seen, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(mac_address) DO UPDATE SET
+			ip_address = excluded.ip_address,
+			model_id = excluded.model_id,
+			firmware_type = excluded.firmware_type,
+			current_preset_id = excluded.current_preset_id,
+			is_online = excluded.is_online,
+			last_seen = excluded.last_seen`,
+		m.MACAddress, m.IPAddress, m.ModelID, m.FirmwareType, m.CurrentPresetID, m.IsOnline, m.LastSeen, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("upsert miner: %w", err)
+	}
+
+	// Get the ID (either from insert or existing)
+	if m.ID == 0 {
+		id, _ := result.LastInsertId()
+		if id == 0 {
+			// Was an update, need to get existing ID
+			if err := tx.QueryRowContext(ctx, `SELECT id FROM miners WHERE mac_address = ?`, m.MACAddress).Scan(&m.ID); err != nil {
+				return nil, fmt.Errorf("get miner id: %w", err)
+			}
+		} else {
+			m.ID = id
+		}
+	}
+
+	// Validate ID was set
+	if m.ID == 0 {
+		return nil, fmt.Errorf("miner ID not set after upsert for MAC %s", m.MACAddress)
+	}
+
+	// Get or create balance config within same transaction
+	config := &BalanceConfig{MinerID: m.ID}
+	err = tx.QueryRowContext(ctx,
+		`SELECT miner_id, enabled, priority, locked FROM balance_config WHERE miner_id = ?`,
+		m.ID).Scan(&config.MinerID, &config.Enabled, &config.Priority, &config.Locked)
+
+	if err == sql.ErrNoRows {
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO balance_config (miner_id, enabled, priority, locked) VALUES (?, 0, 50, 0)`,
+			m.ID)
+		if err != nil {
+			return nil, fmt.Errorf("create balance config: %w", err)
+		}
+		config.Enabled = false
+		config.Priority = 50
+		config.Locked = false
+	} else if err != nil {
+		return nil, fmt.Errorf("get balance config: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return config, nil
+}
+
 // GetMinerByID retrieves a miner by ID with joined data.
 func (r *Repository) GetMinerByID(ctx context.Context, id int64) (*Miner, error) {
 	m := &Miner{}
