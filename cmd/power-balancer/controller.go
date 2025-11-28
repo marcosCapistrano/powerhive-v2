@@ -50,10 +50,10 @@ func (c *Controller) SetPreset(ctx context.Context, ip string, presetName string
 	}
 
 	if status.RestartRequired {
-		log.Printf("[%s] Restart required, restarting mining...", ip)
-		if err := client.RestartMining(ctx); err != nil {
-			log.Printf("[%s] Warning: restart failed: %v", ip, err)
-		}
+		log.Printf("[%s] Restart required, restart it manually: ", ip)
+		// if err := client.RestartMining(ctx); err != nil {
+		// 	log.Printf("[%s] Warning: restart failed: %v", ip, err)
+		// }
 	}
 
 	return nil

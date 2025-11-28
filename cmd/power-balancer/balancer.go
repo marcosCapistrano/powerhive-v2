@@ -613,6 +613,12 @@ func (b *Balancer) processDiscoveredMiner(ctx context.Context, dm discovery.Disc
 	if err := b.repo.UpsertMiner(ctx, m); err != nil {
 		return fmt.Errorf("upsert miner: %w", err)
 	}
+	log.Printf("DEBUG: Miner %s (MAC: %s) upserted with ID: %d", dm.IP, m.MACAddress, m.ID)
+
+	// Validate miner ID before creating balance config
+	if m.ID == 0 {
+		return fmt.Errorf("miner ID is 0 after upsert for %s (MAC: %s)", dm.IP, m.MACAddress)
+	}
 
 	// Ensure balance config exists
 	if _, err := b.repo.GetOrCreateBalanceConfig(ctx, m.ID); err != nil {
